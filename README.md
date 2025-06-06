@@ -20,4 +20,14 @@ python main.py
 
 - Left Arrow: Move left
 - Right Arrow: Move right
-- ESC: Quit game 
+- Space: Shoot
+- ESC: Quit game
+
+## Features
+
+- Player-controlled rocket
+- Shooting mechanics
+- Enemy ships with random movement patterns
+- Score system
+- Collision detection
+- Game over on enemy collision 
