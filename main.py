@@ -673,6 +673,11 @@ class Explosion(pygame.sprite.Sprite):
         self.rect.center = (x, y)
         self.last_update = pygame.time.get_ticks()
         self.frame_rate = 50
+        
+        # Create particles
+        self.particles = []
+        for _ in range(20):  # Number of particles
+            self.particles.append(Particle(x, y, size))
 
     def update(self):
         now = pygame.time.get_ticks()
@@ -683,6 +688,86 @@ class Explosion(pygame.sprite.Sprite):
                 self.kill()
             else:
                 self.image = self.images[self.index]
+        
+        # Update particles
+        for particle in self.particles[:]:
+            particle.update()
+            if particle.lifetime <= 0:
+                self.particles.remove(particle)
+
+    def draw(self, surface):
+        # Draw particles
+        for particle in self.particles:
+            particle.draw(surface)
+        # Draw explosion
+        surface.blit(self.image, self.rect)
+
+class Particle:
+    def __init__(self, x, y, size):
+        self.x = x
+        self.y = y
+        self.size = random.randint(2, 4)
+        # More varied colors for particles
+        if random.random() < 0.3:  # 30% chance for white/yellow particles
+            self.color = (
+                random.randint(200, 255),  # R
+                random.randint(200, 255),  # G
+                random.randint(100, 200),  # B
+                255                        # A
+            )
+        else:  # 70% chance for orange/red particles
+            self.color = (
+                random.randint(200, 255),  # R
+                random.randint(50, 150),   # G
+                random.randint(0, 50),     # B
+                255                        # A
+            )
+        self.speed = random.uniform(3, 8)  # Increased speed range
+        self.angle = random.uniform(0, 360)
+        self.lifetime = random.randint(30, 60)  # Longer lifetime
+        self.original_lifetime = self.lifetime
+        self.gravity = 0.15  # Increased gravity effect
+        self.velocity_x = math.cos(math.radians(self.angle)) * self.speed
+        self.velocity_y = math.sin(math.radians(self.angle)) * self.speed
+        self.rotation = random.uniform(-5, 5)  # Random rotation
+        self.rotation_speed = random.uniform(-2, 2)  # Random rotation speed
+        self.scale = 1.0
+        self.scale_speed = random.uniform(0.95, 0.98)  # Particles shrink over time
+
+    def update(self):
+        self.x += self.velocity_x
+        self.y += self.velocity_y
+        self.velocity_y += self.gravity
+        self.lifetime -= 1
+        self.rotation += self.rotation_speed
+        self.scale *= self.scale_speed
+        
+        # Fade out
+        alpha = int(255 * (self.lifetime / self.original_lifetime))
+        self.color = (*self.color[:3], alpha)
+        
+        # Add some random movement
+        if random.random() < 0.1:  # 10% chance each frame
+            self.velocity_x += random.uniform(-0.2, 0.2)
+            self.velocity_y += random.uniform(-0.2, 0.2)
+
+    def draw(self, surface):
+        if self.lifetime > 0:
+            # Create a surface for the particle
+            particle_surface = pygame.Surface((int(self.size * 2 * self.scale), int(self.size * 2 * self.scale)), pygame.SRCALPHA)
+            
+            # Draw the particle with rotation
+            pygame.draw.circle(particle_surface, self.color, 
+                             (int(self.size * self.scale), int(self.size * self.scale)), 
+                             int(self.size * self.scale))
+            
+            # Rotate the particle
+            rotated_particle = pygame.transform.rotate(particle_surface, self.rotation)
+            
+            # Draw the rotated particle
+            surface.blit(rotated_particle, 
+                        (int(self.x - rotated_particle.get_width()/2), 
+                         int(self.y - rotated_particle.get_height()/2)))
 
 class PowerUp(pygame.sprite.Sprite):
     def __init__(self, type=None):
