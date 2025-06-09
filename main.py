@@ -508,6 +508,7 @@ class Player(pygame.sprite.Sprite):
         self.last_shot = pygame.time.get_ticks()
         self.lives = 3
         self.shield = False
+        self.shield_time = 0  # Separate timer for shield
         self.triple_shot = False
         self.speed_boost = False
         self.laser_active = False
@@ -530,10 +531,39 @@ class Player(pygame.sprite.Sprite):
         if self.visible:
             # Draw shield if active
             if self.shield:
-                self.shield_alpha = (self.shield_alpha + self.shield_alpha_change) % 255
+                # Smooth alpha transition using sine wave
+                self.shield_alpha = int(128 + 127 * math.sin(pygame.time.get_ticks() / 500))  # Slower, smoother transition
                 shield_color = (0, 255, 0, self.shield_alpha)  # Green shield
                 self.shield_surface.fill((0, 0, 0, 0))
-                pygame.draw.ellipse(self.shield_surface, shield_color, self.shield_surface.get_rect(), 2)
+                
+                # Draw main shield circle (thicker)
+                pygame.draw.ellipse(self.shield_surface, shield_color, self.shield_surface.get_rect(), 4)
+                
+                # Draw inner glow
+                inner_glow = pygame.Surface((self.rect.width + 10, self.rect.height + 10), pygame.SRCALPHA)
+                pygame.draw.ellipse(inner_glow, (0, 255, 0, 50), inner_glow.get_rect())
+                inner_glow_rect = inner_glow.get_rect(center=self.shield_surface.get_rect().center)
+                self.shield_surface.blit(inner_glow, inner_glow_rect)
+                
+                # Add sparkles
+                current_time = pygame.time.get_ticks()
+                for i in range(8):  # 8 sparkles
+                    angle = (current_time / 500 + i * 45) % 360  # Slower rotation
+                    rad_angle = math.radians(angle)
+                    distance = self.rect.width * 0.6  # Distance from center
+                    x = self.shield_surface.get_rect().centerx + math.cos(rad_angle) * distance
+                    y = self.shield_surface.get_rect().centery + math.sin(rad_angle) * distance
+                    
+                    # Draw sparkle
+                    sparkle_size = 3
+                    sparkle_color = (255, 255, 255, self.shield_alpha)
+                    pygame.draw.circle(self.shield_surface, sparkle_color, (int(x), int(y)), sparkle_size)
+                    # Add glow to sparkle
+                    glow_surface = pygame.Surface((sparkle_size * 4, sparkle_size * 4), pygame.SRCALPHA)
+                    pygame.draw.circle(glow_surface, (255, 255, 255, 50), (sparkle_size * 2, sparkle_size * 2), sparkle_size * 2)
+                    glow_rect = glow_surface.get_rect(center=(int(x), int(y)))
+                    self.shield_surface.blit(glow_surface, glow_rect)
+                
                 shield_rect = self.shield_surface.get_rect(center=self.rect.center)
                 surface.blit(self.shield_surface, shield_rect)
             
@@ -559,8 +589,13 @@ class Player(pygame.sprite.Sprite):
 
         # Handle power-up timers
         current_time = pygame.time.get_ticks()
-        if self.power_up_time > 0 and current_time > self.power_up_time:
+        
+        # Handle shield timer
+        if self.shield and current_time > self.shield_time:
             self.shield = False
+        
+        # Handle other power-up timers
+        if self.power_up_time > 0 and current_time > self.power_up_time:
             self.triple_shot = False
             self.speed_boost = False
             self.laser_active = False
@@ -590,6 +625,15 @@ class Player(pygame.sprite.Sprite):
             if current_time - self.last_shot > self.shoot_delay:
                 self.shoot()
                 self.last_shot = current_time
+            # Show laser if active
+            if self.laser_active and not self.active_laser:
+                self.active_laser = Laser(self.rect.centerx, self.rect.top)
+                all_sprites.add(self.active_laser)
+        else:
+            # Hide laser when not shooting
+            if self.active_laser:
+                self.active_laser.kill()
+                self.active_laser = None
 
         # Update laser if active
         if self.laser_active and self.active_laser:
@@ -613,8 +657,13 @@ class Player(pygame.sprite.Sprite):
             bullets.add(bullet)
 
     def power_up(self, type):
-        # Clear any existing power-up
-        self.shield = False
+        if type == 'shield':
+            self.shield = True
+            self.shield_time = pygame.time.get_ticks() + 15000  # 15 seconds
+            powerup_sound.play()
+            return  # Don't clear other power-ups for shield
+        
+        # Clear other power-ups
         self.triple_shot = False
         self.speed_boost = False
         self.laser_active = False
@@ -625,10 +674,7 @@ class Player(pygame.sprite.Sprite):
         
         # Set new power-up
         self.power_up_time = pygame.time.get_ticks() + 15000  # 15 seconds
-        if type == 'shield':
-            self.shield = True
-            powerup_sound.play()
-        elif type == 'speed':
+        if type == 'speed':
             self.speed_boost = True
             self.speed = self.original_speed * 1.5
             powerup_sound.play()
@@ -804,140 +850,225 @@ class PowerUp(pygame.sprite.Sprite):
         if self.rect.top > WINDOW_HEIGHT:
             self.kill()
 
-def create_boss():
-    # Calculate size based on screen dimensions
-    size = int(WINDOW_WIDTH * 0.7)  # 70% of screen width
-    surface = pygame.Surface((size, size), pygame.SRCALPHA)
-    
-    # Main body (hexagonal shape)
-    points = []
-    for i in range(6):
-        angle = i * (360 / 6)
-        radius = size/2 * 0.8
-        x = size/2 + radius * math.cos(math.radians(angle))
-        y = size/2 + radius * math.sin(math.radians(angle))
-        points.append((x, y))
-    
-    # Draw main body with gradient
-    for r in range(size//2, 0, -1):
-        alpha = int(255 * (r / (size/2)))
-        color = (200, 0, 0, alpha)  # Red gradient
-        pygame.draw.circle(surface, color, (size//2, size//2), r)
-    
-    # Draw hexagonal shape
-    pygame.draw.polygon(surface, (220, 0, 0), points)
-    
-    # Add details
-    # Cockpit
-    pygame.draw.ellipse(surface, (0, 191, 255), (size//4, size//4, size//2, size//3))
-    pygame.draw.ellipse(surface, (0, 0, 0), (size//4 + 5, size//4 + 5, size//2 - 10, size//3 - 10))
-    
-    # Wings
-    wing_points = [
-        (size//2, size//2),  # Center
-        (size//2 - size//2.5, size//2 + size//5),  # Left wing
-        (size//2 - size//3.3, size//2 + size//2.5),  # Left wing tip
-        (size//2 + size//3.3, size//2 + size//2.5),  # Right wing tip
-        (size//2 + size//2.5, size//2 + size//5),  # Right wing
-    ]
-    pygame.draw.polygon(surface, (180, 0, 0), wing_points)
-    
-    # Engines
-    for x in [size//3, 2*size//3]:
-        pygame.draw.ellipse(surface, (255, 100, 0), (x - size//10, size//2 + size//3.3, size//5, size//3.3))
-        pygame.draw.ellipse(surface, (255, 200, 0), (x - size//20, size//2 + size//2.8, size//10, size//5))
-    
-    # Add highlights
-    highlight_points = []
-    for x, y in points:
-        dx = x - size/2
-        dy = y - size/2
-        length = math.sqrt(dx*dx + dy*dy)
-        if length > 0:
-            dx = dx / length * 2
-            dy = dy / length * 2
-        highlight_points.append((x - dx, y - dy))
-    pygame.draw.polygon(surface, (255, 255, 255), highlight_points, 1)
-    
-    return surface
-
-class AlienBoss(pygame.sprite.Sprite):
-    def __init__(self):
-        super().__init__()
-        self.original_image = create_boss()
-        self.image = self.original_image
-        self.rect = self.image.get_rect()
-        self.rect.centerx = WINDOW_WIDTH // 2
-        self.rect.top = -self.rect.height  # Start above the screen
-        self.speedy = 2
-        self.health = 50
-        self.last_shot = pygame.time.get_ticks()
-        self.shoot_delay = random.randint(300, 800)  # Random delay between shots
-        self.last_powerup_drop = self.health
-        self.powerup_threshold = 10  # Drop powerup every 10 health points
-        self.rotation = 0
-        self.rotation_speed = 1
-        # Stop at 20% above halfway mark
-        self.target_y = WINDOW_HEIGHT * 0.3  # Changed from 0.4 to 0.3
-        self.descending = True
-
-    def update(self):
-        # Rotate the boss
-        self.rotation = (self.rotation + self.rotation_speed) % 360
-        self.image = pygame.transform.rotate(self.original_image, self.rotation)
-        self.rect = self.image.get_rect(center=self.rect.center)
-        
-        # Descend until reaching target position
-        if self.descending:
-            if self.rect.top < self.target_y:
-                self.rect.y += self.speedy
-            else:
-                self.descending = False
-
-        # Shooting
-        now = pygame.time.get_ticks()
-        if now - self.last_shot > self.shoot_delay and not self.descending:
-            self.shoot()
-            self.last_shot = now
-            # Set new random delay for next shot
-            self.shoot_delay = random.randint(300, 800)
-
-    def shoot(self):
-        # Random number of bullets (1-4)
-        num_shots = random.randint(1, 4)
-        
-        for _ in range(num_shots):
-            # Random position along the bottom of the boss
-            x = random.randint(self.rect.left + 20, self.rect.right - 20)
-            # Random angle between -45 and 45 degrees
-            angle = random.randint(-45, 45)
-            # Random speed between 5 and 10
-            speed = random.randint(5, 10)
-            bullet = EnemyBullet(x, self.rect.bottom, angle, speed)
-            all_sprites.add(bullet)
-            enemy_bullets.add(bullet)
-
 class EnemyBullet(pygame.sprite.Sprite):
     def __init__(self, x, y, angle=0, speed=5):
         super().__init__()
-        self.image = pygame.Surface((5, 10))
-        self.image.fill(RED)
+        # Create a small glowing sphere (energy orb)
+        orb_radius = 10
+        self.image = pygame.Surface((orb_radius*2, orb_radius*2), pygame.SRCALPHA)
+        # Outer glow
+        for r in range(orb_radius, 2, -2):
+            alpha = int(60 * (r / orb_radius))
+            pygame.draw.circle(self.image, (0, 200, 255, alpha), (orb_radius, orb_radius), r)
+        # Main orb
+        pygame.draw.circle(self.image, (0, 255, 255), (orb_radius, orb_radius), orb_radius-2)
+        # Core
+        pygame.draw.circle(self.image, (255, 255, 255), (orb_radius, orb_radius), 4)
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.top = y
         self.angle = angle
-        # Calculate speed based on angle
         rad_angle = math.radians(angle)
         self.speedx = math.sin(rad_angle) * speed
         self.speedy = math.cos(rad_angle) * speed
-        # Rotate the bullet image
-        self.image = pygame.transform.rotate(self.image, -angle)
+        # Trail
+        self.trail_positions = []
+        self.max_trail_length = 5
 
     def update(self):
+        self.trail_positions.append(self.rect.center)
+        if len(self.trail_positions) > self.max_trail_length:
+            self.trail_positions.pop(0)
         self.rect.x += self.speedx
         self.rect.y += self.speedy
         if self.rect.top > WINDOW_HEIGHT or self.rect.left < 0 or self.rect.right > WINDOW_WIDTH:
             self.kill()
+
+    def draw(self, surface):
+        for i, pos in enumerate(self.trail_positions):
+            alpha = int(80 * (i / len(self.trail_positions)))
+            trail_surf = pygame.Surface((20, 20), pygame.SRCALPHA)
+            pygame.draw.circle(trail_surf, (0, 200, 255, alpha), (10, 10), 8)
+            trail_rect = trail_surf.get_rect(center=pos)
+            surface.blit(trail_surf, trail_rect)
+        surface.blit(self.image, self.rect)
+
+def create_boss(size):
+    # Create a surface for the boss
+    size = int(size)  # Convert size to integer
+    surface = pygame.Surface((size, size), pygame.SRCALPHA)
+    
+    # Draw main body - hexagonal core with energy shield
+    shield_radius = size//2
+    core_radius = int(size * 0.35)
+    
+    # Energy shield effect
+    for r in range(shield_radius, core_radius, -1):
+        alpha = int(100 * (r / shield_radius))
+        color = (0, 150, 255, alpha)  # Cyan energy shield
+        pygame.draw.circle(surface, color, (size//2, size//2), r)
+    
+    # Main core - metallic hexagon
+    points = []
+    for i in range(6):
+        angle = math.pi/3 * i
+        x = size/2 + math.cos(angle) * core_radius
+        y = size/2 + math.sin(angle) * core_radius
+        points.append((x, y))
+    
+    # Core gradient
+    for r in range(core_radius, 0, -1):
+        alpha = int(255 * (r / core_radius))
+        color = (50, 50, 80, alpha)  # Dark metallic blue
+        pygame.draw.circle(surface, color, (size//2, size//2), r)
+    
+    # Core border
+    pygame.draw.polygon(surface, (100, 100, 255), points)  # Bright blue edges
+    pygame.draw.polygon(surface, (255, 255, 255), points, 3)  # White border
+    
+    # Energy core
+    core_size = int(size * 0.15)
+    for r in range(core_size, 0, -1):
+        alpha = int(255 * (r / core_size))
+        pygame.draw.circle(surface, (0, 200, 255, alpha), (size//2, size//2), r)
+    pygame.draw.circle(surface, (255, 255, 255), (size//2, size//2), core_size, 2)
+    
+    # Energy tendrils
+    for i in range(8):
+        angle = math.pi/4 * i
+        start_x = size/2 + math.cos(angle) * core_radius
+        start_y = size/2 + math.sin(angle) * core_radius
+        end_x = size/2 + math.cos(angle) * shield_radius
+        end_y = size/2 + math.sin(angle) * shield_radius
+        
+        # Tendril glow
+        for r in range(3):
+            alpha = int(150 * (1 - r/3))
+            pygame.draw.line(surface, (0, 200, 255, alpha), 
+                           (start_x, start_y), (end_x, end_y), 3-r)
+    
+    # Energy rings
+    for i in range(3):
+        ring_radius = int(core_radius * (1.2 + i * 0.3))
+        pygame.draw.circle(surface, (0, 150, 255, 100), (size//2, size//2), ring_radius, 2)
+    
+    # Energy orbs
+    for i in range(4):
+        angle = math.pi/2 * i
+        orb_x = size/2 + math.cos(angle) * int(size * 0.4)
+        orb_y = size/2 + math.sin(angle) * int(size * 0.4)
+        orb_size = int(size * 0.08)
+        
+        # Orb glow
+        for r in range(orb_size, 0, -1):
+            alpha = int(200 * (r / orb_size))
+            pygame.draw.circle(surface, (0, 200, 255, alpha), (int(orb_x), int(orb_y)), r)
+        
+        # Orb border
+        pygame.draw.circle(surface, (255, 255, 255), (int(orb_x), int(orb_y)), orb_size, 2)
+    
+    return surface
+
+class AlienBoss(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.original_image = create_boss(WINDOW_WIDTH * 0.25)
+        self.image = self.original_image
+        self.rect = self.image.get_rect()
+        self.rect.centerx = x
+        self.rect.top = y
+        self.angle = 0
+        self.rotation_speed = 1
+        self.last_shot = 0
+        self.shoot_delay = 1000
+        self.target_y = WINDOW_HEIGHT * 0.5
+        self.descent_speed = 2
+        self.has_reached_target = False
+        self.max_health = 100
+        self.health = self.max_health
+        self.health_bar_width = 200
+        self.health_bar_height = 20
+        self.health_bar_padding = 15
+        # Add powerup drop tracking
+        self.last_powerup_drop = self.max_health
+        self.powerup_threshold = 20  # Drop powerup every 20 health points
+
+    def update(self):
+        # Store original position before rotation
+        original_center = self.rect.center
+        
+        # Rotate the boss
+        self.angle = (self.angle + self.rotation_speed) % 360
+        self.image = pygame.transform.rotate(self.original_image, self.angle)
+        self.rect = self.image.get_rect(center=original_center)
+
+        # Descend until reaching target position
+        if not self.has_reached_target:
+            if self.rect.centery < self.target_y:
+                self.rect.y += self.descent_speed
+            else:
+                self.has_reached_target = True
+
+        # Shoot if reached target position
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_shot > self.shoot_delay:
+            self.shoot()
+            self.last_shot = current_time
+
+    def shoot(self):
+        # Calculate spawn points along the bottom edge of the boss
+        spawn_width = self.rect.width * 0.6  # Use 60% of boss width for spawn area
+        left_edge = self.rect.centerx - spawn_width/2
+        right_edge = self.rect.centerx + spawn_width/2
+        
+        # Spawn bullets from the bottom edge of the boss
+        spawn_x = random.randint(int(left_edge), int(right_edge))
+        spawn_y = self.rect.bottom - 5  # Spawn slightly inside the boss
+        
+        # Calculate angle based on spawn position relative to center
+        relative_x = spawn_x - self.rect.centerx
+        angle = math.degrees(math.atan2(relative_x, 100))  # 100 is arbitrary distance for angle calculation
+        
+        bullet = EnemyBullet(spawn_x, spawn_y, angle)
+        all_sprites.add(bullet)
+        enemy_bullets.add(bullet)
+
+    def draw(self, surface):
+        # Draw the boss
+        surface.blit(self.image, self.rect)
+        
+        # Get the original (unrotated) image's rect for health bar positioning
+        original_rect = self.original_image.get_rect(center=self.rect.center)
+        
+        # Draw health bar above the boss using original rect
+        health_bar_x = original_rect.centerx - self.health_bar_width // 2
+        health_bar_y = original_rect.top - self.health_bar_height - self.health_bar_padding
+        
+        # Draw health bar background
+        pygame.draw.rect(surface, (50, 50, 50), 
+                        (health_bar_x, health_bar_y, 
+                         self.health_bar_width, self.health_bar_height))
+        
+        # Calculate health bar fill width
+        health_ratio = self.health / self.max_health
+        fill_width = int(self.health_bar_width * health_ratio)
+        
+        # Draw health bar fill with color gradient
+        if health_ratio > 0.6:
+            color = (0, 255, 0)  # Green
+        elif health_ratio > 0.3:
+            color = (255, 255, 0)  # Yellow
+        else:
+            color = (255, 0, 0)  # Red
+            
+        pygame.draw.rect(surface, color,
+                        (health_bar_x, health_bar_y, 
+                         fill_width, self.health_bar_height))
+        
+        # Draw health bar border
+        pygame.draw.rect(surface, (255, 255, 255),
+                        (health_bar_x, health_bar_y,
+                         self.health_bar_width, self.health_bar_height), 2)
 
 class Laser(pygame.sprite.Sprite):
     def __init__(self, x, y):
@@ -953,7 +1084,7 @@ class Laser(pygame.sprite.Sprite):
         self.rect.bottom = y  # Changed from top to bottom
         self.damage = 1
         self.last_damage = pygame.time.get_ticks()
-        self.damage_delay = 100  # Damage every 100ms
+        self.damage_delay = 500  # Changed from 100 to 500 (5 times slower)
         # Start playing laser sound in loop
         laser_sound.play(-1)  # -1 means loop indefinitely
 
@@ -1039,7 +1170,7 @@ while running:
         elapsed_time = (current_time - game_start_time) / 1000  # Convert to seconds
 
         # Check for boss battle timing
-        if not boss_spawned and not buffer_period and elapsed_time >= 30:
+        if not boss_spawned and not buffer_period and elapsed_time >= 10:
             buffer_period = True
             buffer_start_time = current_time
             # Create explosions for all existing enemies
@@ -1053,7 +1184,7 @@ while running:
         if buffer_period and current_time - buffer_start_time >= 5000:  # 5 seconds
             buffer_period = False
             boss_spawned = True
-            boss = AlienBoss()
+            boss = AlienBoss(WINDOW_WIDTH // 2, -100)  # Spawn from center
             all_sprites.add(boss)
 
         # Only spawn enemies if not in buffer period and boss not spawned
@@ -1093,30 +1224,10 @@ while running:
                     enemy.kill()
 
         # Check for laser-boss collisions
-        if player.active_laser and boss_spawned:
-            if pygame.sprite.collide_rect(player.active_laser, boss):
-                boss.health -= 1
-                # Check if we should drop a powerup
-                if boss.health <= boss.last_powerup_drop - boss.powerup_threshold:
-                    boss.last_powerup_drop = boss.health
-                    # Create shield powerup at boss position
-                    powerup = PowerUp(type='shield')
-                    powerup.rect.centerx = boss.rect.centerx
-                    powerup.rect.top = boss.rect.bottom
-                    all_sprites.add(powerup)
-                    powerups.add(powerup)
-                    powerup_sound.play()
-                if boss.health <= 0:
-                    score += 1000
-                    explosion_sound.play()
-                    boss.kill()
-                    boss_spawned = False
-                    game_start_time = current_time
-
-        # Check for bullet-boss collisions
-        if boss_spawned:
+        if boss_spawned and boss.has_reached_target:  # Only check collisions after descent
+            # Check player bullets hitting boss
             hits = pygame.sprite.spritecollide(boss, bullets, True)
-            for bullet in hits:
+            for hit in hits:
                 boss.health -= 1
                 # Check if we should drop a powerup
                 if boss.health <= boss.last_powerup_drop - boss.powerup_threshold:
@@ -1129,11 +1240,31 @@ while running:
                     powerups.add(powerup)
                     powerup_sound.play()
                 if boss.health <= 0:
-                    score += 1000
-                    explosion_sound.play()
                     boss.kill()
                     boss_spawned = False
+                    score += 1000
+                    explosion_sound.play()
                     game_start_time = current_time
+            
+            # Check player collision with boss
+            if pygame.sprite.collide_mask(player, boss):
+                player.health -= 1
+                if player.health <= 0:
+                    player.kill()
+                    game_over = True
+            
+            # Check laser hitting boss
+            if player.laser_active and pygame.sprite.collide_mask(player.active_laser, boss):
+                current_time = pygame.time.get_ticks()
+                if current_time - player.active_laser.last_damage > player.active_laser.damage_delay:
+                    boss.health -= player.active_laser.damage
+                    player.active_laser.last_damage = current_time
+                    if boss.health <= 0:
+                        boss.kill()
+                        boss_spawned = False
+                        score += 1000
+                        explosion_sound.play()
+                        game_start_time = current_time
 
         # Check for enemy bullet-player collisions
         hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
@@ -1172,10 +1303,14 @@ while running:
         # Draw
         screen.blit(space_background, (0, 0))
         
-        # Draw all sprites except player
+        # Draw all sprites except player and boss
         for sprite in all_sprites:
-            if sprite != player:
+            if sprite != player and not isinstance(sprite, AlienBoss):
                 screen.blit(sprite.image, sprite.rect)
+        
+        # Draw boss with health bar if spawned
+        if boss_spawned:
+            boss.draw(screen)
         
         # Draw player with shield if active
         player.draw(screen)
@@ -1200,10 +1335,6 @@ while running:
             text_rect = buffer_text.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2))
             screen.blit(buffer_text, text_rect)
         
-        if boss_spawned:
-            boss_health_text = font.render(f'Boss Health: {boss.health}', True, RED)
-            screen.blit(boss_health_text, (WINDOW_WIDTH//2 - 100, 90))
-
         pygame.display.flip()
 
     else:
