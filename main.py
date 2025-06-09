@@ -596,6 +596,9 @@ class Player(pygame.sprite.Sprite):
             self.active_laser.update()
 
     def shoot(self):
+        if self.laser_active:
+            return  # Don't shoot regular bullets when laser is active
+            
         self.shoot_sound.play()
         if self.triple_shot:
             # Shoot three bullets in a spread pattern
@@ -610,19 +613,33 @@ class Player(pygame.sprite.Sprite):
             bullets.add(bullet)
 
     def power_up(self, type):
-        self.power_up_time = pygame.time.get_ticks() + 10000  # 10 seconds
+        # Clear any existing power-up
+        self.shield = False
+        self.triple_shot = False
+        self.speed_boost = False
+        self.laser_active = False
+        if self.active_laser:
+            self.active_laser.kill()
+            self.active_laser = None
+        self.speed = self.original_speed
+        
+        # Set new power-up
+        self.power_up_time = pygame.time.get_ticks() + 15000  # 15 seconds
         if type == 'shield':
             self.shield = True
+            powerup_sound.play()
         elif type == 'speed':
             self.speed_boost = True
             self.speed = self.original_speed * 1.5
+            powerup_sound.play()
         elif type == 'triple_shot':
             self.triple_shot = True
+            powerup_sound.play()
         elif type == 'laser':
             self.laser_active = True
             self.active_laser = Laser(self.rect.centerx, self.rect.top)
             all_sprites.add(self.active_laser)
-        powerup_sound.play()
+            laser_sound.play()  # Play laser sound when activating laser power-up
 
     def respawn(self):
         self.rect.centerx = WINDOW_WIDTH // 2
@@ -860,8 +877,8 @@ class AlienBoss(pygame.sprite.Sprite):
         self.powerup_threshold = 10  # Drop powerup every 10 health points
         self.rotation = 0
         self.rotation_speed = 1
-        # Stop at 40% of screen height (10% above halfway)
-        self.target_y = WINDOW_HEIGHT * 0.4
+        # Stop at 20% above halfway mark
+        self.target_y = WINDOW_HEIGHT * 0.3  # Changed from 0.4 to 0.3
         self.descending = True
 
     def update(self):
@@ -933,17 +950,25 @@ class Laser(pygame.sprite.Sprite):
             pygame.draw.line(self.image, color, (i, 0), (i, WINDOW_HEIGHT), 1)
         self.rect = self.image.get_rect()
         self.rect.centerx = x
-        self.rect.top = y
+        self.rect.bottom = y  # Changed from top to bottom
         self.damage = 1
         self.last_damage = pygame.time.get_ticks()
         self.damage_delay = 100  # Damage every 100ms
+        # Start playing laser sound in loop
+        laser_sound.play(-1)  # -1 means loop indefinitely
 
     def update(self):
         # Update position to follow player
         self.rect.centerx = player.rect.centerx
+        self.rect.bottom = player.rect.top  # Keep laser at player's top
 
     def draw(self, surface):
         surface.blit(self.image, self.rect)
+
+    def kill(self):
+        # Stop laser sound when laser is deactivated
+        laser_sound.stop()
+        super().kill()
 
 # Show start screen
 show_start_screen()
