@@ -27,8 +27,9 @@ GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 GRAY = (100, 100, 100)
 
-# Set up the display - true fullscreen
-screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
+# Set up the display - true fullscreen with hardware acceleration
+screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), 
+                               pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF | pygame.SCALED)
 pygame.display.set_caption("Rocket Game")
 clock = pygame.time.Clock()
 
@@ -1050,14 +1051,14 @@ class AlienBoss(pygame.sprite.Sprite):
         self.rotation_speed = 1
         self.last_shot = 0
         self.shoot_delay = 1000  # 1 second between shots
-        self.max_health = 250  # Changed from 300 to 250
+        self.max_health = 240  # Changed from 300 to 240
         self.health = self.max_health
         self.health_bar_width = int(WINDOW_WIDTH * 0.6)
         self.health_bar_height = 20
         self.health_bar_padding = 15
         self.target_y = int(WINDOW_HEIGHT * 0.4)
         self.has_reached_position = False
-        self.last_powerup_drop = 0
+        self.last_powerup_drop = self.max_health  # Initialize to max health
         self.powerup_drop_delay = 5000
         self.original_image = self.image
         self.original_rect = self.rect.copy()
@@ -1112,23 +1113,40 @@ class AlienBoss(pygame.sprite.Sprite):
                 self.shoot()
                 self.last_shot = current_time
 
+            # Check for shield drops at health thresholds
+            if self.health <= self.last_powerup_drop - 100:
+                self.last_powerup_drop = self.health
+                # Create shield powerup at boss position
+                powerup = PowerUp(type='shield')
+                powerup.rect.centerx = self.rect.centerx
+                powerup.rect.top = self.rect.bottom
+                all_sprites.add(powerup)
+                powerups.add(powerup)
+                powerup_sound.play()
+
     def shoot(self):
         # Calculate spawn points along the bottom edge of the boss
         spawn_width = self.rect.width * 0.6  # Use 60% of boss width for spawn area
         left_edge = self.rect.centerx - spawn_width/2
         right_edge = self.rect.centerx + spawn_width/2
         
-        # Spawn bullets from the bottom edge of the boss
-        spawn_x = random.randint(int(left_edge), int(right_edge))
-        spawn_y = self.rect.bottom - 5  # Spawn slightly inside the boss
-        
-        # Calculate angle based on spawn position relative to center
-        relative_x = spawn_x - self.rect.centerx
-        angle = math.degrees(math.atan2(relative_x, 100))  # 100 is arbitrary distance for angle calculation
-        
-        bullet = EnemyBullet(spawn_x, spawn_y, angle)
-        all_sprites.add(bullet)
-        enemy_bullets.add(bullet)
+        # Fire multiple bullets in a spread pattern
+        num_bullets = 5  # Increased from 1 to 5 bullets
+        for i in range(num_bullets):
+            # Calculate spawn position
+            spawn_x = left_edge + (spawn_width * i / (num_bullets - 1))
+            spawn_y = self.rect.bottom - 5  # Spawn slightly inside the boss
+            
+            # Calculate angle based on spawn position relative to center
+            relative_x = spawn_x - self.rect.centerx
+            angle = math.degrees(math.atan2(relative_x, 100))  # 100 is arbitrary distance for angle calculation
+            
+            # Add some random variation to the angle
+            angle += random.uniform(-10, 10)  # Add up to 10 degrees of variation
+            
+            bullet = EnemyBullet(spawn_x, spawn_y, angle)
+            all_sprites.add(bullet)
+            enemy_bullets.add(bullet)
 
     def draw(self, surface):
         # Draw the boss
