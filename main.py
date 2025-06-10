@@ -1253,7 +1253,7 @@ class Laser(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.bottom = y  # Changed from top to bottom
-        self.damage = 2.5  # Increased from 1 to 2.5
+        self.damage = 2.5 * 2.0  # Increased from 1 to 2.5 and then multiplied by 2.00
         self.last_damage = pygame.time.get_ticks()
         self.damage_delay = 500  # Changed from 100 to 500 (5 times slower)
         # Start playing laser sound in loop
@@ -1418,7 +1418,7 @@ while running:
                 enemies.add(new_enemy)
             
             # Add power-up spawning
-            if random.random() < 0.005:  # 0.5% chance each frame
+            if random.random() < 0.05:  # 0.5% chance each frame
                 powerup = PowerUp()
                 all_sprites.add(powerup)
                 powerups.add(powerup)
@@ -1479,7 +1479,13 @@ while running:
             if pygame.sprite.collide_mask(player, boss):
                 player.health -= 1
                 if player.health <= 0:
-                    player.kill()
+                    if player.active_laser:
+                        player.active_laser.kill()
+                        player.active_laser = None
+                    game_over = True
+                    if score > high_score:
+                        high_score = score
+                        save_high_score(high_score)
             
             # Check laser hitting boss
             if player.laser_active and player.active_laser and pygame.sprite.collide_mask(player.active_laser, boss):
@@ -1501,24 +1507,35 @@ while running:
                 powerup_sound.play()
 
         # Check for enemy bullet-player collisions
-        hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
-        if hits and not player.shield and not player.invulnerable:
-            # Create player explosion first
-            explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
-            all_sprites.add(explosion)
-            # Then handle player damage
-            player.lives -= 1
-            if player.lives <= 0:
-                game_over = True
-                if score > high_score:
-                    high_score = score
-                    save_high_score(high_score)
-            else:
-                player.respawn()
+        if not player.is_respawning and not player.is_warping:
+            hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
+            if hits and not player.shield and not player.invulnerable:
+                # Stop laser sound on collision
+                if player.active_laser:
+                    player.active_laser.kill()
+                    player.active_laser = None
+                explosion_sound.play() # Play explosion sound on collision
+                # Create player explosion first
+                explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
+                all_sprites.add(explosion)
+                # Then handle player damage
+                player.lives -= 1
+                if player.lives <= 0:
+                    game_over = True
+                    if score > high_score:
+                        high_score = score
+                        save_high_score(high_score)
+                else:
+                    player.respawn()
 
         # Check for enemy-player collisions
         hits = pygame.sprite.spritecollide(player, enemies, False, pygame.sprite.collide_mask)
         if hits and not player.shield and not player.invulnerable:
+            # Stop laser sound on collision
+            if player.active_laser:
+                player.active_laser.kill()
+                player.active_laser = None
+            explosion_sound.play() # Play explosion sound on collision
             # Create player explosion first
             explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
             all_sprites.add(explosion)
@@ -1546,6 +1563,9 @@ while running:
                 # Then handle player damage
                 player.lives -= 1
                 if player.lives <= 0:
+                    if player.active_laser:
+                        player.active_laser.kill()
+                        player.active_laser = None
                     game_over = True
                     if score > high_score:
                         high_score = score
