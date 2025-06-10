@@ -559,19 +559,14 @@ class Player(pygame.sprite.Sprite):
                 self.image = self.original_image  # Reset to original size
                 self.rect = self.image.get_rect(center=self.rect.center)
             else:
-                # Use sine wave for curved path
-                # First half of animation: move horizontally with slight vertical curve
-                if warp_progress < 0.5:
-                    horizontal_progress = warp_progress * 2  # Scale to 0-1
-                    # Use sine wave for vertical offset
-                    vertical_offset = math.sin(horizontal_progress * math.pi) * 100  # 100 pixels max curve
-                    current_x = self.start_x + (self.target_x - self.start_x) * horizontal_progress
-                    current_y = (WINDOW_HEIGHT // 2) - vertical_offset
-                # Second half: move down to final position
-                else:
-                    vertical_progress = (warp_progress - 0.5) * 2  # Scale to 0-1
-                    current_x = self.target_x
-                    current_y = (WINDOW_HEIGHT // 2) + ((self.original_y - (WINDOW_HEIGHT // 2)) * vertical_progress)
+                # Use continuous sine wave for smooth curved path
+                # Horizontal movement from right to center
+                current_x = self.start_x + (self.target_x - self.start_x) * warp_progress
+                
+                # Vertical movement using sine wave
+                # Start at center height, curve up, then down to final position
+                vertical_offset = math.sin(warp_progress * math.pi) * 200  # Increased curve height
+                current_y = (WINDOW_HEIGHT // 2) - vertical_offset + (self.original_y - (WINDOW_HEIGHT // 2)) * warp_progress
                 
                 self.rect.centerx = current_x
                 self.rect.bottom = current_y
