@@ -1428,9 +1428,10 @@ while running:
         # Check for enemy bullet-player collisions
         hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
         if hits and not player.shield and not player.invulnerable:
-            # Create player explosion
+            # Create player explosion first
             explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
             all_sprites.add(explosion)
+            # Then handle player damage
             player.lives -= 1
             if player.lives <= 0:
                 game_over = True
@@ -1443,9 +1444,10 @@ while running:
         # Check for enemy-player collisions
         hits = pygame.sprite.spritecollide(player, enemies, False, pygame.sprite.collide_mask)
         if hits and not player.shield and not player.invulnerable:
-            # Create player explosion
+            # Create player explosion first
             explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
             all_sprites.add(explosion)
+            # Then handle player damage
             player.lives -= 1
             if player.lives <= 0:
                 game_over = True
@@ -1459,6 +1461,22 @@ while running:
                 explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
                 all_sprites.add(explosion)
                 enemy.kill()
+
+        # Check for boss-player collisions
+        if boss_spawned and boss.has_reached_position:
+            if pygame.sprite.collide_mask(player, boss) and not player.shield and not player.invulnerable:
+                # Create player explosion first
+                explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
+                all_sprites.add(explosion)
+                # Then handle player damage
+                player.lives -= 1
+                if player.lives <= 0:
+                    game_over = True
+                    if score > high_score:
+                        high_score = score
+                        save_high_score(high_score)
+                else:
+                    player.respawn()
 
         # Draw
         screen.blit(space_background, (0, 0))
