@@ -526,6 +526,9 @@ class Player(pygame.sprite.Sprite):
         self.visible = True
         self.flash_delay = 100
         self.last_flash = 0
+        self.respawn_delay = 2000  # 2 seconds delay before flashing starts
+        self.respawn_time = 0
+        self.is_respawning = False
 
     def draw(self, surface):
         if self.visible:
@@ -575,8 +578,18 @@ class Player(pygame.sprite.Sprite):
                 self.active_laser.draw(surface)
 
     def update(self):
+        # Handle respawn delay
+        if self.is_respawning:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.respawn_time >= self.respawn_delay:
+                self.is_respawning = False
+                self.invulnerable = True
+                self.visible = True
+                self.flash_count = 0
+                self.last_flash = current_time
+
         # Handle invulnerability flashing
-        if self.invulnerable:
+        if self.invulnerable and not self.is_respawning:
             current_time = pygame.time.get_ticks()
             if current_time - self.last_flash > self.flash_delay:
                 self.visible = not self.visible
@@ -587,57 +600,59 @@ class Player(pygame.sprite.Sprite):
                     self.visible = True
                     self.flash_count = 0
 
-        # Handle power-up timers
-        current_time = pygame.time.get_ticks()
-        
-        # Handle shield timer
-        if self.shield and current_time > self.shield_time:
-            self.shield = False
-        
-        # Handle other power-up timers
-        if self.power_up_time > 0 and current_time > self.power_up_time:
-            self.triple_shot = False
-            self.speed_boost = False
-            self.laser_active = False
-            if self.active_laser:
-                self.active_laser.kill()
-                self.active_laser = None
-            self.speed = self.original_speed
-            self.power_up_time = 0
-
-        # Handle movement
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT]:
-            self.rect.x -= self.speed
-        if keys[pygame.K_RIGHT]:
-            self.rect.x += self.speed
-        if keys[pygame.K_UP]:
-            self.rect.y -= self.speed
-        if keys[pygame.K_DOWN]:
-            self.rect.y += self.speed
-
-        # Keep player on screen
-        self.rect.clamp_ip(screen.get_rect())
-
-        # Handle shooting
-        if keys[pygame.K_SPACE]:
+        # Only update movement and shooting if not respawning
+        if not self.is_respawning:
+            # Handle power-up timers
             current_time = pygame.time.get_ticks()
-            if current_time - self.last_shot > self.shoot_delay:
-                self.shoot()
-                self.last_shot = current_time
-            # Show laser if active
-            if self.laser_active and not self.active_laser:
-                self.active_laser = Laser(self.rect.centerx, self.rect.top)
-                all_sprites.add(self.active_laser)
-        else:
-            # Hide laser when not shooting
-            if self.active_laser:
-                self.active_laser.kill()
-                self.active_laser = None
+            
+            # Handle shield timer
+            if self.shield and current_time > self.shield_time:
+                self.shield = False
+            
+            # Handle other power-up timers
+            if self.power_up_time > 0 and current_time > self.power_up_time:
+                self.triple_shot = False
+                self.speed_boost = False
+                self.laser_active = False
+                if self.active_laser:
+                    self.active_laser.kill()
+                    self.active_laser = None
+                self.speed = self.original_speed
+                self.power_up_time = 0
 
-        # Update laser if active
-        if self.laser_active and self.active_laser:
-            self.active_laser.update()
+            # Handle movement
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_LEFT]:
+                self.rect.x -= self.speed
+            if keys[pygame.K_RIGHT]:
+                self.rect.x += self.speed
+            if keys[pygame.K_UP]:
+                self.rect.y -= self.speed
+            if keys[pygame.K_DOWN]:
+                self.rect.y += self.speed
+
+            # Keep player on screen
+            self.rect.clamp_ip(screen.get_rect())
+
+            # Handle shooting
+            if keys[pygame.K_SPACE]:
+                current_time = pygame.time.get_ticks()
+                if current_time - self.last_shot > self.shoot_delay:
+                    self.shoot()
+                    self.last_shot = current_time
+                # Show laser if active
+                if self.laser_active and not self.active_laser:
+                    self.active_laser = Laser(self.rect.centerx, self.rect.top)
+                    all_sprites.add(self.active_laser)
+            else:
+                # Hide laser when not shooting
+                if self.active_laser:
+                    self.active_laser.kill()
+                    self.active_laser = None
+
+            # Update laser if active
+            if self.laser_active and self.active_laser:
+                self.active_laser.update()
 
     def shoot(self):
         if self.laser_active:
@@ -690,10 +705,10 @@ class Player(pygame.sprite.Sprite):
     def respawn(self):
         self.rect.centerx = WINDOW_WIDTH // 2
         self.rect.bottom = WINDOW_HEIGHT - 10
-        self.invulnerable = True
-        self.invulnerable_time = pygame.time.get_ticks()
-        self.flash_count = 0
-        self.visible = True
+        self.visible = False  # Hide the ship during respawn delay
+        self.is_respawning = True
+        self.respawn_time = pygame.time.get_ticks()
+        self.invulnerable = False  # Don't start invulnerability until after delay
 
 class Bullet(pygame.sprite.Sprite):
     def __init__(self, x, y, angle=0):
@@ -1182,6 +1197,54 @@ class Laser(pygame.sprite.Sprite):
         laser_sound.stop()
         super().kill()
 
+class PlayerExplosion(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.particles = []
+        self.x = x
+        self.y = y
+        # Create a transparent surface for the sprite
+        self.image = pygame.Surface((50, 50), pygame.SRCALPHA)
+        self.rect = self.image.get_rect(center=(x, y))
+        self.create_particles()
+        
+    def create_particles(self):
+        # Create more particles for player explosion
+        num_particles = 40
+        
+        # Blue/cyan theme for player explosion
+        colors = [
+            (0, 200, 255),    # Cyan
+            (0, 150, 255),    # Light blue
+            (0, 100, 255),    # Blue
+            (255, 255, 255),  # White
+            (200, 200, 255)   # Light purple
+        ]
+        
+        for _ in range(num_particles):
+            # Randomly select a color from the theme
+            base_color = random.choice(colors)
+            # Add some variation to the color
+            color = (
+                max(0, min(255, base_color[0] + random.randint(-20, 20))),
+                max(0, min(255, base_color[1] + random.randint(-20, 20))),
+                max(0, min(255, base_color[2] + random.randint(-20, 20))),
+                255
+            )
+            self.particles.append(Particle(self.x, self.y, 2, color))
+    
+    def update(self):
+        for particle in self.particles[:]:
+            particle.update()
+            if particle.lifetime <= 0:
+                self.particles.remove(particle)
+        if len(self.particles) == 0:
+            self.kill()
+    
+    def draw(self, surface):
+        for particle in self.particles:
+            particle.draw(surface)
+
 # Show start screen
 show_start_screen()
 
@@ -1342,7 +1405,6 @@ while running:
                 player.health -= 1
                 if player.health <= 0:
                     player.kill()
-                    game_over = True
             
             # Check laser hitting boss
             if player.laser_active and player.active_laser and pygame.sprite.collide_mask(player.active_laser, boss):
@@ -1366,6 +1428,9 @@ while running:
         # Check for enemy bullet-player collisions
         hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
         if hits and not player.shield and not player.invulnerable:
+            # Create player explosion
+            explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
+            all_sprites.add(explosion)
             player.lives -= 1
             if player.lives <= 0:
                 game_over = True
@@ -1378,6 +1443,9 @@ while running:
         # Check for enemy-player collisions
         hits = pygame.sprite.spritecollide(player, enemies, False, pygame.sprite.collide_mask)
         if hits and not player.shield and not player.invulnerable:
+            # Create player explosion
+            explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
+            all_sprites.add(explosion)
             player.lives -= 1
             if player.lives <= 0:
                 game_over = True
