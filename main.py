@@ -766,25 +766,28 @@ class Explosion(pygame.sprite.Sprite):
         surface.blit(self.image, self.rect)
 
 class Particle:
-    def __init__(self, x, y, size):
+    def __init__(self, x, y, size, color=None):
         self.x = x
         self.y = y
-        self.size = random.randint(2, 4)
+        self.size = random.uniform(1, 3)  # Smaller particles
         # More varied colors for particles
-        if random.random() < 0.3:  # 30% chance for white/yellow particles
-            self.color = (
-                random.randint(200, 255),  # R
-                random.randint(200, 255),  # G
-                random.randint(100, 200),  # B
-                255                        # A
-            )
-        else:  # 70% chance for orange/red particles
-            self.color = (
-                random.randint(200, 255),  # R
-                random.randint(50, 150),   # G
-                random.randint(0, 50),     # B
-                255                        # A
-            )
+        if color is None:
+            if random.random() < 0.3:  # 30% chance for white/yellow particles
+                self.color = (
+                    random.randint(200, 255),  # R
+                    random.randint(200, 255),  # G
+                    random.randint(100, 200),  # B
+                    255                        # A
+                )
+            else:  # 70% chance for orange/red particles
+                self.color = (
+                    random.randint(200, 255),  # R
+                    random.randint(50, 150),   # G
+                    random.randint(0, 50),     # B
+                    255                        # A
+                )
+        else:
+            self.color = color
         self.speed = random.uniform(3, 8)  # Increased speed range
         self.angle = random.uniform(0, 360)
         self.lifetime = random.randint(30, 60)  # Longer lifetime
@@ -831,6 +834,57 @@ class Particle:
             surface.blit(rotated_particle, 
                         (int(self.x - rotated_particle.get_width()/2), 
                          int(self.y - rotated_particle.get_height()/2)))
+
+class AsteroidExplosion(pygame.sprite.Sprite):
+    def __init__(self, x, y, size, level=1):
+        pygame.sprite.Sprite.__init__(self)
+        self.particles = []
+        self.x = x
+        self.y = y
+        self.size = size
+        self.level = level
+        # Create a transparent surface for the sprite
+        self.image = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+        self.rect = self.image.get_rect(center=(x, y))
+        self.create_particles()
+        
+    def create_particles(self):
+        # Create particles based on asteroid size and level
+        num_particles = int(self.size * 0.8)  # More particles for larger asteroids
+        
+        # Define colors based on level
+        if self.level == 4:
+            colors = [(255, 0, 0), (200, 0, 0), (255, 100, 0)]  # Red theme
+        elif self.level == 3:
+            colors = [(255, 100, 0), (255, 150, 0), (255, 200, 0)]  # Orange theme
+        elif self.level == 2:
+            colors = [(255, 255, 0), (200, 200, 0), (255, 200, 0)]  # Yellow theme
+        else:
+            colors = [(200, 200, 200), (150, 150, 150), (100, 100, 100)]  # Gray theme
+        
+        for _ in range(num_particles):
+            # Randomly select a color from the theme
+            base_color = random.choice(colors)
+            # Add some variation to the color
+            color = (
+                max(0, min(255, base_color[0] + random.randint(-20, 20))),
+                max(0, min(255, base_color[1] + random.randint(-20, 20))),
+                max(0, min(255, base_color[2] + random.randint(-20, 20))),
+                255
+            )
+            self.particles.append(Particle(self.x, self.y, self.size, color))
+    
+    def update(self):
+        for particle in self.particles[:]:
+            particle.update()
+            if particle.lifetime <= 0:
+                self.particles.remove(particle)
+        if len(self.particles) == 0:
+            self.kill()
+    
+    def draw(self, surface):
+        for particle in self.particles:
+            particle.draw(surface)
 
 class PowerUp(pygame.sprite.Sprite):
     def __init__(self, type=None):
@@ -1202,7 +1256,7 @@ while running:
             buffer_start_time = current_time
             # Create explosions for all existing enemies
             for enemy in enemies:
-                explosion = Explosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width * 2)
+                explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
                 all_sprites.add(explosion)
                 enemy.kill()
             enemies.empty()
@@ -1239,8 +1293,8 @@ while running:
                 if enemy.health <= 0:
                     score += enemy.points
                     explosion_sound.play()
-                    # Create explosion
-                    explosion = Explosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width * 2)
+                    # Create particle explosion
+                    explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
                     all_sprites.add(explosion)
                     # Chance to drop powerup
                     if random.random() < 0.1:  # 10% chance
@@ -1334,7 +1388,7 @@ while running:
                 player.respawn()
             # Destroy the enemy that hit the player
             for enemy in hits:
-                explosion = Explosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width * 2)
+                explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
                 all_sprites.add(explosion)
                 enemy.kill()
 
@@ -1344,7 +1398,10 @@ while running:
         # Draw all sprites except player and boss
         for sprite in all_sprites:
             if sprite != player and not isinstance(sprite, AlienBoss):
-                screen.blit(sprite.image, sprite.rect)
+                if isinstance(sprite, AsteroidExplosion):
+                    sprite.draw(screen)  # Draw particles for AsteroidExplosion
+                else:
+                    screen.blit(sprite.image, sprite.rect)  # Draw normal sprites
         
         # Draw boss with health bar if spawned
         if boss_spawned:
