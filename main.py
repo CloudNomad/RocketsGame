@@ -532,6 +532,7 @@ class Player(pygame.sprite.Sprite):
         self.respawn_delay = 2000
         self.respawn_time = 0
         self.is_respawning = False
+        self.score = 0  # Add score attribute
         
         # Warp-in animation properties
         self.warp_start_time = pygame.time.get_ticks()
@@ -663,6 +664,31 @@ class Player(pygame.sprite.Sprite):
             # Update laser if active
             if self.laser_active and self.active_laser:
                 self.active_laser.update()
+
+            # Handle shield damage to enemies
+            if self.shield:
+                # Check for enemy collisions with shield
+                shield_hits = pygame.sprite.spritecollide(self, enemies, False, pygame.sprite.collide_mask)
+                for enemy in shield_hits:
+                    if not isinstance(enemy, AlienBoss):  # Don't damage bosses
+                        enemy.health -= 1
+                        if enemy.health <= 0:
+                            self.add_score(enemy.points)
+                            explosion_sound.play()
+                            explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
+                            all_sprites.add(explosion)
+                            enemy.kill()
+                
+                # Check for enemy bullet collisions with shield
+                bullet_hits = pygame.sprite.spritecollide(self, enemy_bullets, True)
+                for bullet in bullet_hits:
+                    explosion_sound.play()
+
+    def get_score(self):
+        return self.score
+
+    def add_score(self, points):
+        self.score += points
 
     def draw(self, surface):
         # Draw warp particles
@@ -1429,7 +1455,7 @@ while running:
             if enemy is not None:  # Check if enemy exists
                 enemy.health -= len(bullet_list)
                 if enemy.health <= 0:
-                    score += enemy.points
+                    player.add_score(enemy.points)
                     explosion_sound.play()
                     # Create particle explosion
                     explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
@@ -1448,7 +1474,7 @@ while running:
                 if enemy is not None:  # Check if enemy exists
                     enemy.health -= 1
                     if enemy.health <= 0:
-                        score += enemy.points
+                        player.add_score(enemy.points)
                         explosion_sound.play()
                         enemy.kill()
 
@@ -1472,7 +1498,7 @@ while running:
                     if boss.health <= 0:
                         boss.kill()
                         boss_spawned = False
-                        score += 1000
+                        player.add_score(1000)
                         game_start_time = current_time
             
             # Check player collision with boss
@@ -1496,7 +1522,7 @@ while running:
                     if boss.health <= 0:
                         boss.kill()
                         boss_spawned = False
-                        score += 1000
+                        player.add_score(1000)
                         game_start_time = current_time
 
         # Check for power-up collisions
@@ -1592,7 +1618,7 @@ while running:
         player.draw(screen)
         
         # Draw score and lives
-        score_text = font.render(f'Score: {score}', True, WHITE)
+        score_text = font.render(f'Score: {player.get_score()}', True, WHITE)
         screen.blit(score_text, (10, 10))
         
         lives_text = font.render(f'Lives: {player.lives}', True, WHITE)
