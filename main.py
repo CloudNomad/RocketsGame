@@ -496,10 +496,12 @@ class Player(pygame.sprite.Sprite):
     def __init__(self, rocket_type='default'):
         super().__init__()
         self.rocket_type = rocket_type
-        self.image = load_image(f'rocket_{rocket_type}.png', 0.5)
+        self.original_image = load_image(f'rocket_{rocket_type}.png', 0.5)
+        self.image = self.original_image
         self.rect = self.image.get_rect()
-        self.rect.centerx = WINDOW_WIDTH // 2
-        self.rect.bottom = WINDOW_HEIGHT - 10
+        # Start from off-screen right
+        self.rect.centerx = WINDOW_WIDTH + 200  # Start further off-screen to the right
+        self.rect.centery = WINDOW_HEIGHT // 2  # Center vertically
         
         # Get rocket stats
         rocket_data = ROCKET_TYPES[rocket_type]
@@ -509,7 +511,7 @@ class Player(pygame.sprite.Sprite):
         self.last_shot = pygame.time.get_ticks()
         self.lives = 3
         self.shield = False
-        self.shield_time = 0  # Separate timer for shield
+        self.shield_time = 0
         self.triple_shot = False
         self.speed_boost = False
         self.laser_active = False
@@ -527,61 +529,81 @@ class Player(pygame.sprite.Sprite):
         self.visible = True
         self.flash_delay = 100
         self.last_flash = 0
-        self.respawn_delay = 2000  # 2 seconds delay before flashing starts
+        self.respawn_delay = 2000
         self.respawn_time = 0
         self.is_respawning = False
-
-    def draw(self, surface):
-        if self.visible:
-            # Draw shield if active
-            if self.shield:
-                # Smooth alpha transition using sine wave
-                self.shield_alpha = int(128 + 127 * math.sin(pygame.time.get_ticks() / 500))  # Slower, smoother transition
-                shield_color = (0, 255, 0, self.shield_alpha)  # Green shield
-                self.shield_surface.fill((0, 0, 0, 0))
-                
-                # Draw main shield circle (thicker)
-                pygame.draw.ellipse(self.shield_surface, shield_color, self.shield_surface.get_rect(), 4)
-                
-                # Draw inner glow
-                inner_glow = pygame.Surface((self.rect.width + 10, self.rect.height + 10), pygame.SRCALPHA)
-                pygame.draw.ellipse(inner_glow, (0, 255, 0, 50), inner_glow.get_rect())
-                inner_glow_rect = inner_glow.get_rect(center=self.shield_surface.get_rect().center)
-                self.shield_surface.blit(inner_glow, inner_glow_rect)
-                
-                # Add sparkles
-                current_time = pygame.time.get_ticks()
-                for i in range(8):  # 8 sparkles
-                    angle = (current_time / 500 + i * 45) % 360  # Slower rotation
-                    rad_angle = math.radians(angle)
-                    distance = self.rect.width * 0.6  # Distance from center
-                    x = self.shield_surface.get_rect().centerx + math.cos(rad_angle) * distance
-                    y = self.shield_surface.get_rect().centery + math.sin(rad_angle) * distance
-                    
-                    # Draw sparkle
-                    sparkle_size = 3
-                    sparkle_color = (255, 255, 255, self.shield_alpha)
-                    pygame.draw.circle(self.shield_surface, sparkle_color, (int(x), int(y)), sparkle_size)
-                    # Add glow to sparkle
-                    glow_surface = pygame.Surface((sparkle_size * 4, sparkle_size * 4), pygame.SRCALPHA)
-                    pygame.draw.circle(glow_surface, (255, 255, 255, 50), (sparkle_size * 2, sparkle_size * 2), sparkle_size * 2)
-                    glow_rect = glow_surface.get_rect(center=(int(x), int(y)))
-                    self.shield_surface.blit(glow_surface, glow_rect)
-                
-                shield_rect = self.shield_surface.get_rect(center=self.rect.center)
-                surface.blit(self.shield_surface, shield_rect)
-            
-            # Draw player
-            surface.blit(self.image, self.rect)
-            
-            # Draw active laser if any
-            if self.active_laser:
-                self.active_laser.draw(surface)
+        
+        # Warp-in animation properties
+        self.warp_start_time = pygame.time.get_ticks()
+        self.warp_duration = 1500  # 1.5 seconds for smoother animation
+        self.is_warping = True
+        self.warp_particles = []
+        self.original_y = WINDOW_HEIGHT - 10  # Target position
+        self.original_size = self.original_image.get_size()
+        self.current_scale = 2.5  # Start at 2.5x size
+        self.start_x = self.rect.centerx
+        self.target_x = WINDOW_WIDTH // 2  # Center of screen
 
     def update(self):
+        current_time = pygame.time.get_ticks()
+        
+        # Handle warp-in animation
+        if self.is_warping:
+            warp_progress = (current_time - self.warp_start_time) / self.warp_duration
+            
+            if warp_progress >= 1.0:
+                self.is_warping = False
+                self.rect.centerx = self.target_x
+                self.rect.bottom = self.original_y
+                self.warp_particles.clear()
+                self.image = self.original_image  # Reset to original size
+                self.rect = self.image.get_rect(center=self.rect.center)
+            else:
+                # Use sine wave for curved path
+                # First half of animation: move horizontally with slight vertical curve
+                if warp_progress < 0.5:
+                    horizontal_progress = warp_progress * 2  # Scale to 0-1
+                    # Use sine wave for vertical offset
+                    vertical_offset = math.sin(horizontal_progress * math.pi) * 100  # 100 pixels max curve
+                    current_x = self.start_x + (self.target_x - self.start_x) * horizontal_progress
+                    current_y = (WINDOW_HEIGHT // 2) - vertical_offset
+                # Second half: move down to final position
+                else:
+                    vertical_progress = (warp_progress - 0.5) * 2  # Scale to 0-1
+                    current_x = self.target_x
+                    current_y = (WINDOW_HEIGHT // 2) + ((self.original_y - (WINDOW_HEIGHT // 2)) * vertical_progress)
+                
+                self.rect.centerx = current_x
+                self.rect.bottom = current_y
+                
+                # Calculate scale (from 2.5 to 1.0) with easing
+                self.current_scale = 2.5 - (1.5 * warp_progress)
+                new_size = (int(self.original_size[0] * self.current_scale), 
+                          int(self.original_size[1] * self.current_scale))
+                self.image = pygame.transform.scale(self.original_image, new_size)
+                self.rect = self.image.get_rect(center=self.rect.center)
+                
+                # Add warp particles
+                if random.random() < 0.3:  # 30% chance each frame
+                    particle = {
+                        'x': self.rect.centerx + random.randint(-20, 20),
+                        'y': self.rect.centery + random.randint(-10, 10),
+                        'size': random.randint(2, 5),
+                        'alpha': 255,
+                        'color': (0, 191, 255)  # Cyan color
+                    }
+                    self.warp_particles.append(particle)
+                
+                # Update and remove old particles
+                for particle in self.warp_particles[:]:
+                    particle['alpha'] -= 10
+                    if particle['alpha'] <= 0:
+                        self.warp_particles.remove(particle)
+                
+                return  # Skip other updates during warp
+        
         # Handle respawn delay
         if self.is_respawning:
-            current_time = pygame.time.get_ticks()
             if current_time - self.respawn_time >= self.respawn_delay:
                 self.is_respawning = False
                 self.invulnerable = True
@@ -591,26 +613,21 @@ class Player(pygame.sprite.Sprite):
 
         # Handle invulnerability flashing
         if self.invulnerable and not self.is_respawning:
-            current_time = pygame.time.get_ticks()
             if current_time - self.last_flash > self.flash_delay:
                 self.visible = not self.visible
                 self.last_flash = current_time
                 self.flash_count += 1
-                if self.flash_count >= 6:  # Flash 3 times (6 toggles)
+                if self.flash_count >= 6:
                     self.invulnerable = False
                     self.visible = True
                     self.flash_count = 0
 
-        # Only update movement and shooting if not respawning
-        if not self.is_respawning:
+        # Only update movement and shooting if not respawning and not warping
+        if not self.is_respawning and not self.is_warping:
             # Handle power-up timers
-            current_time = pygame.time.get_ticks()
-            
-            # Handle shield timer
             if self.shield and current_time > self.shield_time:
                 self.shield = False
             
-            # Handle other power-up timers
             if self.power_up_time > 0 and current_time > self.power_up_time:
                 self.triple_shot = False
                 self.speed_boost = False
@@ -637,16 +654,13 @@ class Player(pygame.sprite.Sprite):
 
             # Handle shooting
             if keys[pygame.K_SPACE]:
-                current_time = pygame.time.get_ticks()
                 if current_time - self.last_shot > self.shoot_delay:
                     self.shoot()
                     self.last_shot = current_time
-                # Show laser if active
                 if self.laser_active and not self.active_laser:
                     self.active_laser = Laser(self.rect.centerx, self.rect.top)
                     all_sprites.add(self.active_laser)
             else:
-                # Hide laser when not shooting
                 if self.active_laser:
                     self.active_laser.kill()
                     self.active_laser = None
@@ -654,6 +668,54 @@ class Player(pygame.sprite.Sprite):
             # Update laser if active
             if self.laser_active and self.active_laser:
                 self.active_laser.update()
+
+    def draw(self, surface):
+        # Draw warp particles
+        for particle in self.warp_particles:
+            particle_surface = pygame.Surface((particle['size'] * 2, particle['size'] * 2), pygame.SRCALPHA)
+            color = (*particle['color'], particle['alpha'])
+            pygame.draw.circle(particle_surface, color, (particle['size'], particle['size']), particle['size'])
+            surface.blit(particle_surface, (particle['x'] - particle['size'], particle['y'] - particle['size']))
+        
+        if self.visible:
+            # Draw shield if active
+            if self.shield:
+                self.shield_alpha = int(128 + 127 * math.sin(pygame.time.get_ticks() / 500))
+                shield_color = (0, 255, 0, self.shield_alpha)
+                self.shield_surface.fill((0, 0, 0, 0))
+                
+                pygame.draw.ellipse(self.shield_surface, shield_color, self.shield_surface.get_rect(), 4)
+                
+                inner_glow = pygame.Surface((self.rect.width + 10, self.rect.height + 10), pygame.SRCALPHA)
+                pygame.draw.ellipse(inner_glow, (0, 255, 0, 50), inner_glow.get_rect())
+                inner_glow_rect = inner_glow.get_rect(center=self.shield_surface.get_rect().center)
+                self.shield_surface.blit(inner_glow, inner_glow_rect)
+                
+                current_time = pygame.time.get_ticks()
+                for i in range(8):
+                    angle = (current_time / 500 + i * 45) % 360
+                    rad_angle = math.radians(angle)
+                    distance = self.rect.width * 0.6
+                    x = self.shield_surface.get_rect().centerx + math.cos(rad_angle) * distance
+                    y = self.shield_surface.get_rect().centery + math.sin(rad_angle) * distance
+                    
+                    sparkle_size = 3
+                    sparkle_color = (255, 255, 255, self.shield_alpha)
+                    pygame.draw.circle(self.shield_surface, sparkle_color, (int(x), int(y)), sparkle_size)
+                    glow_surface = pygame.Surface((sparkle_size * 4, sparkle_size * 4), pygame.SRCALPHA)
+                    pygame.draw.circle(glow_surface, (255, 255, 255, 50), (sparkle_size * 2, sparkle_size * 2), sparkle_size * 2)
+                    glow_rect = glow_surface.get_rect(center=(int(x), int(y)))
+                    self.shield_surface.blit(glow_surface, glow_rect)
+                
+                shield_rect = self.shield_surface.get_rect(center=self.rect.center)
+                surface.blit(self.shield_surface, shield_rect)
+            
+            # Draw player
+            surface.blit(self.image, self.rect)
+            
+            # Draw active laser if any
+            if self.active_laser:
+                self.active_laser.draw(surface)
 
     def shoot(self):
         if self.laser_active:
