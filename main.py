@@ -1321,6 +1321,23 @@ while running:
             else:
                 player.respawn()
 
+        # Check for enemy-player collisions
+        hits = pygame.sprite.spritecollide(player, enemies, False, pygame.sprite.collide_mask)
+        if hits and not player.shield and not player.invulnerable:
+            player.lives -= 1
+            if player.lives <= 0:
+                game_over = True
+                if score > high_score:
+                    high_score = score
+                    save_high_score(high_score)
+            else:
+                player.respawn()
+            # Destroy the enemy that hit the player
+            for enemy in hits:
+                explosion = Explosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width * 2)
+                all_sprites.add(explosion)
+                enemy.kill()
+
         # Draw
         screen.blit(space_background, (0, 0))
         
