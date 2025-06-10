@@ -533,6 +533,7 @@ class Player(pygame.sprite.Sprite):
         self.respawn_time = 0
         self.is_respawning = False
         self.score = 0  # Add score attribute
+        self.invulnerability_duration = 2000  # 2 seconds of invulnerability (increased from 1 second)
         
         # Warp-in animation properties
         self.warp_start_time = pygame.time.get_ticks()
@@ -606,6 +607,7 @@ class Player(pygame.sprite.Sprite):
                 self.visible = True
                 self.flash_count = 0
                 self.last_flash = current_time
+                self.invulnerable_time = current_time  # Set invulnerability start time
 
         # Handle invulnerability flashing
         if self.invulnerable and not self.is_respawning:
@@ -613,7 +615,7 @@ class Player(pygame.sprite.Sprite):
                 self.visible = not self.visible
                 self.last_flash = current_time
                 self.flash_count += 1
-                if self.flash_count >= 6:
+                if current_time - self.invulnerable_time >= self.invulnerability_duration:  # Check against duration
                     self.invulnerable = False
                     self.visible = True
                     self.flash_count = 0
@@ -1139,7 +1141,7 @@ class AlienBoss(pygame.sprite.Sprite):
         self.health_bar_width = int(WINDOW_WIDTH * 0.6)
         self.health_bar_height = 20
         self.health_bar_padding = 15
-        self.target_y = int(WINDOW_HEIGHT * 0.4)
+        self.target_y = int(WINDOW_HEIGHT * 0.35)  # Changed from 0.3 to 0.35 (35% of screen height)
         self.has_reached_position = False
         self.last_powerup_drop = self.max_health  # Initialize to max health
         self.powerup_drop_delay = 5000
@@ -1170,10 +1172,10 @@ class AlienBoss(pygame.sprite.Sprite):
             # Update speed and shoot delay based on health
             if health_ratio <= 0.3:  # Red health - fastest
                 self.speed = self.base_speed * 3
-                self.shoot_delay = self.base_shoot_delay // 3
+                self.shoot_delay = self.base_shoot_delay // 2  # Changed from //3 to //2
             elif health_ratio <= 0.6:  # Yellow health - medium speed
                 self.speed = self.base_speed * 2
-                self.shoot_delay = self.base_shoot_delay // 2
+                self.shoot_delay = self.base_shoot_delay // 1.5  # Changed from //2 to //1.5
             else:  # Green health - base speed
                 self.speed = self.base_speed
                 self.shoot_delay = self.base_shoot_delay
@@ -1196,11 +1198,11 @@ class AlienBoss(pygame.sprite.Sprite):
                 self.shoot()
                 self.last_shot = current_time
 
-            # Check for shield drops at health thresholds
-            if self.health <= self.last_powerup_drop - 100:
+            # Check for power-up drops at health thresholds
+            if self.health <= self.last_powerup_drop - 60:  # Changed from 80 to 60
                 self.last_powerup_drop = self.health
-                # Create shield powerup at boss position
-                powerup = PowerUp(type='shield')
+                # Create triple shot powerup at boss position
+                powerup = PowerUp(type='triple_shot')  # Explicitly set type to triple_shot
                 powerup.rect.centerx = self.rect.centerx
                 powerup.rect.top = self.rect.bottom
                 all_sprites.add(powerup)
@@ -1214,7 +1216,14 @@ class AlienBoss(pygame.sprite.Sprite):
         right_edge = self.rect.centerx + spawn_width/2
         
         # Fire multiple bullets in a spread pattern
-        num_bullets = 5  # Increased from 1 to 5 bullets
+        health_ratio = self.health / self.max_health
+        if health_ratio <= 0.3:  # Red health - same bullets as yellow but faster
+            num_bullets = 4  # Changed from 5 to 4 to match yellow phase
+        elif health_ratio <= 0.6:  # Yellow health - 4 bullets
+            num_bullets = 4
+        else:  # Green health - 3 bullets
+            num_bullets = 3
+            
         for i in range(num_bullets):
             # Calculate spawn position
             spawn_x = left_edge + (spawn_width * i / (num_bullets - 1))
@@ -1485,20 +1494,10 @@ while running:
             for hit in hits:
                 if hit is not None:  # Check if bullet exists
                     boss.health -= 1
-                    # Check if we should drop a powerup
-                    if boss.health <= boss.last_powerup_drop - 20:
-                        boss.last_powerup_drop = boss.health
-                        # Create shield powerup at boss position
-                        powerup = PowerUp(type='shield')
-                        powerup.rect.centerx = boss.rect.centerx
-                        powerup.rect.top = boss.rect.bottom
-                        all_sprites.add(powerup)
-                        powerups.add(powerup)
-                        powerup_sound.play()
                     if boss.health <= 0:
                         boss.kill()
                         boss_spawned = False
-                        player.add_score(1000)
+                        player.add_score(1000)  # Use player's add_score method
                         game_start_time = current_time
             
             # Check player collision with boss
