@@ -970,50 +970,78 @@ def create_boss(size):
     return surface
 
 class AlienBoss(pygame.sprite.Sprite):
-    def __init__(self, x, y):
+    def __init__(self, size):
         super().__init__()
-        self.original_image = create_boss(WINDOW_WIDTH * 0.25)
-        self.image = self.original_image
+        self.image = create_boss(size)
         self.rect = self.image.get_rect()
-        self.rect.centerx = x
-        self.rect.top = y
-        self.angle = 0
+        self.rect.centerx = WINDOW_WIDTH // 2
+        self.rect.top = -size  # Start above screen
+        self.speed = 2
+        self.rotation = 0
         self.rotation_speed = 1
         self.last_shot = 0
-        self.shoot_delay = 1000
-        self.target_y = WINDOW_HEIGHT * 0.5
-        self.descent_speed = 2
-        self.has_reached_target = False
-        self.max_health = 100
+        self.shoot_delay = 1000  # 1 second between shots
+        self.max_health = 250  # Changed from 300 to 250
         self.health = self.max_health
-        self.health_bar_width = 200
+        self.health_bar_width = int(WINDOW_WIDTH * 0.6)
         self.health_bar_height = 20
         self.health_bar_padding = 15
-        # Add powerup drop tracking
-        self.last_powerup_drop = self.max_health
-        self.powerup_threshold = 20  # Drop powerup every 20 health points
+        self.target_y = int(WINDOW_HEIGHT * 0.4)
+        self.has_reached_position = False
+        self.last_powerup_drop = 0
+        self.powerup_drop_delay = 5000
+        self.original_image = self.image
+        self.original_rect = self.rect.copy()
+        self.movement_direction = 1  # 1 for right, -1 for left
+        self.base_speed = 2
+        self.base_shoot_delay = 1000
 
     def update(self):
-        # Store original position before rotation
-        original_center = self.rect.center
-        
         # Rotate the boss
-        self.angle = (self.angle + self.rotation_speed) % 360
-        self.image = pygame.transform.rotate(self.original_image, self.angle)
-        self.rect = self.image.get_rect(center=original_center)
-
+        self.rotation = (self.rotation + self.rotation_speed) % 360
+        self.image = pygame.transform.rotate(self.original_image, self.rotation)
+        self.rect = self.image.get_rect(center=self.rect.center)
+        
         # Descend until reaching target position
-        if not self.has_reached_target:
+        if not self.has_reached_position:
             if self.rect.centery < self.target_y:
-                self.rect.y += self.descent_speed
+                self.rect.y += self.speed
             else:
-                self.has_reached_target = True
-
-        # Shoot if reached target position
-        current_time = pygame.time.get_ticks()
-        if current_time - self.last_shot > self.shoot_delay:
-            self.shoot()
-            self.last_shot = current_time
+                self.has_reached_position = True
+                self.last_shot = pygame.time.get_ticks()
+        
+        # Horizontal movement based on health
+        if self.has_reached_position:
+            health_ratio = self.health / self.max_health
+            
+            # Update speed and shoot delay based on health
+            if health_ratio <= 0.3:  # Red health - fastest
+                self.speed = self.base_speed * 3
+                self.shoot_delay = self.base_shoot_delay // 3
+            elif health_ratio <= 0.6:  # Yellow health - medium speed
+                self.speed = self.base_speed * 2
+                self.shoot_delay = self.base_shoot_delay // 2
+            else:  # Green health - base speed
+                self.speed = self.base_speed
+                self.shoot_delay = self.base_shoot_delay
+            
+            # Move horizontally if in yellow or red health
+            if health_ratio <= 0.6:
+                self.rect.x += self.speed * self.movement_direction
+                
+                # Bounce off screen edges
+                if self.rect.right >= WINDOW_WIDTH:
+                    self.rect.right = WINDOW_WIDTH
+                    self.movement_direction = -1
+                elif self.rect.left <= 0:
+                    self.rect.left = 0
+                    self.movement_direction = 1
+            
+            # Shoot if reached target position
+            current_time = pygame.time.get_ticks()
+            if current_time - self.last_shot > self.shoot_delay:
+                self.shoot()
+                self.last_shot = current_time
 
     def shoot(self):
         # Calculate spawn points along the bottom edge of the boss
@@ -1037,38 +1065,37 @@ class AlienBoss(pygame.sprite.Sprite):
         # Draw the boss
         surface.blit(self.image, self.rect)
         
-        # Get the original (unrotated) image's rect for health bar positioning
-        original_rect = self.original_image.get_rect(center=self.rect.center)
-        
-        # Draw health bar above the boss using original rect
-        health_bar_x = original_rect.centerx - self.health_bar_width // 2
-        health_bar_y = original_rect.top - self.health_bar_height - self.health_bar_padding
-        
-        # Draw health bar background
-        pygame.draw.rect(surface, (50, 50, 50), 
-                        (health_bar_x, health_bar_y, 
-                         self.health_bar_width, self.health_bar_height))
-        
-        # Calculate health bar fill width
-        health_ratio = self.health / self.max_health
-        fill_width = int(self.health_bar_width * health_ratio)
-        
-        # Draw health bar fill with color gradient
-        if health_ratio > 0.6:
-            color = (0, 255, 0)  # Green
-        elif health_ratio > 0.3:
-            color = (255, 255, 0)  # Yellow
-        else:
-            color = (255, 0, 0)  # Red
+        # Only draw health bar if we've reached our position
+        if self.has_reached_position:
+            # Calculate health bar position - fixed at top of screen
+            health_bar_x = (WINDOW_WIDTH - self.health_bar_width) // 2
+            health_bar_y = 20  # Fixed distance from top
             
-        pygame.draw.rect(surface, color,
-                        (health_bar_x, health_bar_y, 
-                         fill_width, self.health_bar_height))
-        
-        # Draw health bar border
-        pygame.draw.rect(surface, (255, 255, 255),
-                        (health_bar_x, health_bar_y,
-                         self.health_bar_width, self.health_bar_height), 2)
+            # Draw health bar background
+            pygame.draw.rect(surface, (50, 50, 50),
+                           (health_bar_x, health_bar_y,
+                            self.health_bar_width, self.health_bar_height))
+            
+            # Calculate health ratio and fill width
+            health_ratio = self.health / self.max_health
+            fill_width = int(self.health_bar_width * health_ratio)
+            
+            # Draw health bar fill with color gradient
+            if health_ratio > 0.6:
+                color = (0, 255, 0)  # Green for high health
+            elif health_ratio > 0.3:
+                color = (255, 255, 0)  # Yellow for medium health
+            else:
+                color = (255, 0, 0)  # Red for low health
+            
+            pygame.draw.rect(surface, color,
+                           (health_bar_x, health_bar_y,
+                            fill_width, self.health_bar_height))
+            
+            # Draw health bar border
+            pygame.draw.rect(surface, (255, 255, 255),
+                           (health_bar_x, health_bar_y,
+                            self.health_bar_width, self.health_bar_height), 2)
 
 class Laser(pygame.sprite.Sprite):
     def __init__(self, x, y):
@@ -1184,7 +1211,7 @@ while running:
         if buffer_period and current_time - buffer_start_time >= 5000:  # 5 seconds
             buffer_period = False
             boss_spawned = True
-            boss = AlienBoss(WINDOW_WIDTH // 2, -100)  # Spawn from center
+            boss = AlienBoss(WINDOW_WIDTH * 0.25)  # Spawn from center
             all_sprites.add(boss)
 
         # Only spawn enemies if not in buffer period and boss not spawned
@@ -1205,46 +1232,56 @@ while running:
                 powerups.add(powerup)
 
         # Check for bullet-enemy collisions
-        hits = pygame.sprite.groupcollide(enemies, bullets, False, True)
+        hits = pygame.sprite.groupcollide(enemies, bullets, False, True)  # First parameter False to keep enemies alive
         for enemy, bullet_list in hits.items():
-            enemy.health -= len(bullet_list)
-            if enemy.health <= 0:
-                score += enemy.points
-                explosion_sound.play()
-                enemy.kill()
+            if enemy is not None:  # Check if enemy exists
+                enemy.health -= len(bullet_list)
+                if enemy.health <= 0:
+                    score += enemy.points
+                    explosion_sound.play()
+                    # Create explosion
+                    explosion = Explosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width * 2)
+                    all_sprites.add(explosion)
+                    # Chance to drop powerup
+                    if random.random() < 0.1:  # 10% chance
+                        powerup = PowerUp(type='shield')
+                        all_sprites.add(powerup)
+                        powerups.add(powerup)
+                    enemy.kill()
 
         # Check for laser-enemy collisions
         if player.active_laser:
             hits = pygame.sprite.spritecollide(player.active_laser, enemies, False)
             for enemy in hits:
-                enemy.health -= 1
-                if enemy.health <= 0:
-                    score += enemy.points
-                    explosion_sound.play()
-                    enemy.kill()
+                if enemy is not None:  # Check if enemy exists
+                    enemy.health -= 1
+                    if enemy.health <= 0:
+                        score += enemy.points
+                        explosion_sound.play()
+                        enemy.kill()
 
         # Check for laser-boss collisions
-        if boss_spawned and boss.has_reached_target:  # Only check collisions after descent
+        if boss_spawned and boss.has_reached_position:  # Only check collisions after descent
             # Check player bullets hitting boss
             hits = pygame.sprite.spritecollide(boss, bullets, True)
             for hit in hits:
-                boss.health -= 1
-                # Check if we should drop a powerup
-                if boss.health <= boss.last_powerup_drop - boss.powerup_threshold:
-                    boss.last_powerup_drop = boss.health
-                    # Create shield powerup at boss position
-                    powerup = PowerUp(type='shield')
-                    powerup.rect.centerx = boss.rect.centerx
-                    powerup.rect.top = boss.rect.bottom
-                    all_sprites.add(powerup)
-                    powerups.add(powerup)
-                    powerup_sound.play()
-                if boss.health <= 0:
-                    boss.kill()
-                    boss_spawned = False
-                    score += 1000
-                    explosion_sound.play()
-                    game_start_time = current_time
+                if hit is not None:  # Check if bullet exists
+                    boss.health -= 1
+                    # Check if we should drop a powerup
+                    if boss.health <= boss.last_powerup_drop - 20:
+                        boss.last_powerup_drop = boss.health
+                        # Create shield powerup at boss position
+                        powerup = PowerUp(type='shield')
+                        powerup.rect.centerx = boss.rect.centerx
+                        powerup.rect.top = boss.rect.bottom
+                        all_sprites.add(powerup)
+                        powerups.add(powerup)
+                        powerup_sound.play()
+                    if boss.health <= 0:
+                        boss.kill()
+                        boss_spawned = False
+                        score += 1000
+                        game_start_time = current_time
             
             # Check player collision with boss
             if pygame.sprite.collide_mask(player, boss):
@@ -1254,7 +1291,7 @@ while running:
                     game_over = True
             
             # Check laser hitting boss
-            if player.laser_active and pygame.sprite.collide_mask(player.active_laser, boss):
+            if player.laser_active and player.active_laser and pygame.sprite.collide_mask(player.active_laser, boss):
                 current_time = pygame.time.get_ticks()
                 if current_time - player.active_laser.last_damage > player.active_laser.damage_delay:
                     boss.health -= player.active_laser.damage
@@ -1263,8 +1300,14 @@ while running:
                         boss.kill()
                         boss_spawned = False
                         score += 1000
-                        explosion_sound.play()
                         game_start_time = current_time
+
+        # Check for power-up collisions
+        hits = pygame.sprite.spritecollide(player, powerups, True, pygame.sprite.collide_mask)
+        for powerup in hits:
+            if powerup is not None:
+                player.power_up(powerup.type)
+                powerup_sound.play()
 
         # Check for enemy bullet-player collisions
         hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
@@ -1277,28 +1320,6 @@ while running:
                     save_high_score(high_score)
             else:
                 player.respawn()
-
-        # Check for asteroid-player collisions
-        asteroid_hits = pygame.sprite.spritecollide(player, enemies, True)
-        if asteroid_hits and not player.shield and not player.invulnerable:
-            player.lives -= 1
-            # Create explosion for each asteroid that hit
-            for enemy in asteroid_hits:
-                explosion = Explosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width * 2)
-                all_sprites.add(explosion)
-                explosion_sound.play()
-            if player.lives <= 0:
-                game_over = True
-                if score > high_score:
-                    high_score = score
-                    save_high_score(high_score)
-            else:
-                player.respawn()
-
-        # Check for power-up collisions
-        hits = pygame.sprite.spritecollide(player, powerups, True)
-        for powerup in hits:
-            player.power_up(powerup.type)
 
         # Draw
         screen.blit(space_background, (0, 0))
