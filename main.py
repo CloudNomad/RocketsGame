@@ -496,7 +496,7 @@ class Player(pygame.sprite.Sprite):
     def __init__(self, rocket_type='default'):
         super().__init__()
         self.rocket_type = rocket_type
-        self.original_image = load_image(f'rocket_{rocket_type}.png', 0.5)
+        self.original_image = load_image(f'rocket_{rocket_type}.png', 0.6)
         self.image = self.original_image
         self.rect = self.image.get_rect()
         # Start from off-screen right
@@ -1253,7 +1253,7 @@ class Laser(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.bottom = y  # Changed from top to bottom
-        self.damage = 1
+        self.damage = 2.5  # Increased from 1 to 2.5
         self.last_damage = pygame.time.get_ticks()
         self.damage_delay = 500  # Changed from 100 to 500 (5 times slower)
         # Start playing laser sound in loop
