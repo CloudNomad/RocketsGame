@@ -218,37 +218,76 @@ def save_high_score(score):
     with open('highscore.json', 'w') as f:
         json.dump({'high_score': score}, f)
 
-def show_game_over_screen(score, high_score):
-    screen.fill(BLACK)
-    font = pygame.font.Font(None, 74)
-    text = font.render('GAME OVER', True, WHITE)
-    text_rect = text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/3))
-    screen.blit(text, text_rect)
+def show_game_over_screen(score, high_score, transition_state, fade_alpha, transition_start_time):
+    current_time = pygame.time.get_ticks()
     
-    font = pygame.font.Font(None, 36)
-    score_text = font.render(f'Score: {score}', True, WHITE)
-    score_rect = score_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2))
-    screen.blit(score_text, score_rect)
+    # Start delay if not already started
+    if transition_state is None:
+        transition_state = 'delay'
+        transition_start_time = current_time
     
-    high_score_text = font.render(f'High Score: {high_score}', True, WHITE)
-    high_score_rect = high_score_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 50))
-    screen.blit(high_score_text, high_score_rect)
+    # Handle delay period
+    if transition_state == 'delay':
+        if current_time - transition_start_time >= game_over_delay:
+            transition_state = 'fading_out'
+            transition_start_time = current_time
+        return True, transition_state, fade_alpha, transition_start_time
     
-    restart_text = font.render('Press SPACE to restart', True, WHITE)
-    restart_rect = restart_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT*2/3))
-    screen.blit(restart_text, restart_rect)
+    # Handle fade out
+    if transition_state == 'fading_out':
+        fade_alpha = min(255, fade_alpha + fade_speed)
+        fade_surface.set_alpha(fade_alpha)
+        screen.blit(fade_surface, (0, 0))
+        
+        # Switch to fade in after delay
+        if fade_alpha >= 255 and current_time - transition_start_time >= transition_delay:
+            transition_state = 'fading_in'
+            transition_start_time = current_time
+            fade_alpha = 255
+    
+    # Handle fade in to game over screen
+    elif transition_state == 'fading_in':
+        fade_alpha = max(0, fade_alpha - fade_speed)
+        fade_surface.set_alpha(fade_alpha)
+        
+        # Draw game over screen
+        screen.fill(BLACK)
+        font = pygame.font.Font(None, 74)
+        text = font.render('GAME OVER', True, WHITE)
+        text_rect = text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/3))
+        screen.blit(text, text_rect)
+        
+        font = pygame.font.Font(None, 36)
+        score_text = font.render(f'Score: {score}', True, WHITE)
+        score_rect = score_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2))
+        screen.blit(score_text, score_rect)
+        
+        high_score_text = font.render(f'High Score: {high_score}', True, WHITE)
+        high_score_rect = high_score_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 50))
+        screen.blit(high_score_text, high_score_rect)
+        
+        restart_text = font.render('Press any button to restart', True, WHITE)
+        restart_rect = restart_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT*2/3))
+        screen.blit(restart_text, restart_rect)
+        
+        # Apply fade
+        screen.blit(fade_surface, (0, 0))
+        
+        # Check for restart only after fade in is complete
+        if fade_alpha <= 0:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                if event.type == pygame.KEYUP:
+                    if event.key == pygame.K_ESCAPE:
+                        pygame.quit()
+                        sys.exit()
+                    else:
+                        return False, transition_state, fade_alpha, transition_start_time  # Signal to restart game
     
     pygame.display.flip()
-    
-    waiting = True
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYUP:
-                if event.key == pygame.K_SPACE:
-                    waiting = False
+    return True, transition_state, fade_alpha, transition_start_time  # Keep showing game over screen
 
 def create_rocket_variations():
     rockets = {}
@@ -503,6 +542,10 @@ class Player(pygame.sprite.Sprite):
         self.rect.centerx = WINDOW_WIDTH + 200  # Start further off-screen to the right
         self.rect.centery = WINDOW_HEIGHT // 2  # Center vertically
         
+        # Create smaller hitbox
+        self.hitbox_scale = 0.98  # 98% of original size
+        self.update_hitbox()
+        
         # Get rocket stats
         rocket_data = ROCKET_TYPES[rocket_type]
         self.speed = rocket_data['speed']
@@ -546,7 +589,21 @@ class Player(pygame.sprite.Sprite):
         self.start_x = self.rect.centerx
         self.target_x = WINDOW_WIDTH // 2  # Center of screen
 
+    def update_hitbox(self):
+        # Create a smaller surface for the hitbox
+        hitbox_size = (int(self.rect.width * self.hitbox_scale), 
+                      int(self.rect.height * self.hitbox_scale))
+        self.hitbox = pygame.Surface(hitbox_size, pygame.SRCALPHA)
+        self.hitbox.fill((0, 0, 0, 0))  # Transparent
+        # Draw a simple shape for collision detection
+        pygame.draw.rect(self.hitbox, (255, 255, 255), self.hitbox.get_rect())
+        self.hitbox_rect = self.hitbox.get_rect(center=self.rect.center)
+
     def update(self):
+        # If game over, don't update anything
+        if game_over:
+            return
+
         current_time = pygame.time.get_ticks()
         
         # Handle warp-in animation
@@ -560,6 +617,7 @@ class Player(pygame.sprite.Sprite):
                 self.warp_particles.clear()
                 self.image = self.original_image  # Reset to original size
                 self.rect = self.image.get_rect(center=self.rect.center)
+                self.update_hitbox()  # Update hitbox after warp
             else:
                 # Use continuous sine wave for smooth curved path
                 # Horizontal movement from right to center
@@ -579,6 +637,7 @@ class Player(pygame.sprite.Sprite):
                           int(self.original_size[1] * self.current_scale))
                 self.image = pygame.transform.scale(self.original_image, new_size)
                 self.rect = self.image.get_rect(center=self.rect.center)
+                self.update_hitbox()  # Update hitbox during warp
                 
                 # Add warp particles
                 if random.random() < 0.3:  # 30% chance each frame
@@ -649,6 +708,7 @@ class Player(pygame.sprite.Sprite):
 
             # Keep player on screen
             self.rect.clamp_ip(screen.get_rect())
+            self.update_hitbox()  # Update hitbox after movement
 
             # Handle shooting
             if keys[pygame.K_SPACE]:
@@ -675,7 +735,7 @@ class Player(pygame.sprite.Sprite):
                     if not isinstance(enemy, AlienBoss):  # Don't damage bosses
                         enemy.health -= 1
                         if enemy.health <= 0:
-                            self.add_score(enemy.points)
+                            self.score += enemy.points  # Use self.score instead of score
                             explosion_sound.play()
                             explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
                             all_sprites.add(explosion)
@@ -685,12 +745,6 @@ class Player(pygame.sprite.Sprite):
                 bullet_hits = pygame.sprite.spritecollide(self, enemy_bullets, True)
                 for bullet in bullet_hits:
                     explosion_sound.play()
-
-    def get_score(self):
-        return self.score
-
-    def add_score(self, points):
-        self.score += points
 
     def draw(self, surface):
         # Draw warp particles
@@ -740,22 +794,20 @@ class Player(pygame.sprite.Sprite):
             if self.active_laser:
                 self.active_laser.draw(surface)
 
-    def shoot(self):
-        if self.laser_active:
-            return  # Don't shoot regular bullets when laser is active
-            
-        self.shoot_sound.play()
-        if self.triple_shot:
-            # Shoot three bullets in a spread pattern
-            for angle in [-15, 0, 15]:
-                bullet = Bullet(self.rect.centerx, self.rect.top, angle)
-                all_sprites.add(bullet)
-                bullets.add(bullet)
-        else:
-            # Shoot single bullet
-            bullet = Bullet(self.rect.centerx, self.rect.top)
-            all_sprites.add(bullet)
-            bullets.add(bullet)
+    def respawn(self):
+        self.rect.centerx = WINDOW_WIDTH // 2
+        self.rect.bottom = WINDOW_HEIGHT - 10
+        self.visible = False  # Hide the ship during respawn delay
+        self.is_respawning = True
+        self.respawn_time = pygame.time.get_ticks()
+        self.invulnerable = False  # Don't start invulnerability until after delay
+        self.update_hitbox()  # Update hitbox after respawn
+
+    def get_score(self):
+        return self.score
+
+    def add_score(self, points):
+        self.score += points
 
     def power_up(self, type):
         if type == 'shield':
@@ -788,13 +840,22 @@ class Player(pygame.sprite.Sprite):
             all_sprites.add(self.active_laser)
             laser_sound.play()  # Play laser sound when activating laser power-up
 
-    def respawn(self):
-        self.rect.centerx = WINDOW_WIDTH // 2
-        self.rect.bottom = WINDOW_HEIGHT - 10
-        self.visible = False  # Hide the ship during respawn delay
-        self.is_respawning = True
-        self.respawn_time = pygame.time.get_ticks()
-        self.invulnerable = False  # Don't start invulnerability until after delay
+    def shoot(self):
+        if self.laser_active:
+            return  # Don't shoot regular bullets when laser is active
+            
+        self.shoot_sound.play()
+        if self.triple_shot:
+            # Shoot three bullets in a spread pattern
+            for angle in [-15, 0, 15]:
+                bullet = Bullet(self.rect.centerx, self.rect.top, angle)
+                all_sprites.add(bullet)
+                bullets.add(bullet)
+        else:
+            # Shoot single bullet
+            bullet = Bullet(self.rect.centerx, self.rect.top)
+            all_sprites.add(bullet)
+            bullets.add(bullet)
 
 class Bullet(pygame.sprite.Sprite):
     def __init__(self, x, y, angle=0):
@@ -1317,6 +1378,7 @@ class PlayerExplosion(pygame.sprite.Sprite):
         self.image = pygame.Surface((50, 50), pygame.SRCALPHA)
         self.rect = self.image.get_rect(center=(x, y))
         self.create_particles()
+        print("Player explosion created at", x, y)  # Debug print
         
     def create_particles(self):
         # Create more particles for player explosion
@@ -1349,9 +1411,11 @@ class PlayerExplosion(pygame.sprite.Sprite):
             if particle.lifetime <= 0:
                 self.particles.remove(particle)
         if len(self.particles) == 0:
+            print("Player explosion finished")  # Debug print
             self.kill()
     
     def draw(self, surface):
+        print("Drawing player explosion with", len(self.particles), "particles")  # Debug print
         for particle in self.particles:
             particle.draw(surface)
 
@@ -1386,10 +1450,21 @@ score = 0
 high_score = load_high_score()
 font = pygame.font.Font(None, 36)
 game_over = False
+game_over_time = 0  # Track when game over occurred
 game_start_time = pygame.time.get_ticks()
 boss_spawned = False
 buffer_period = False
 buffer_start_time = 0
+
+# Fade transition variables
+fade_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+fade_surface.fill(BLACK)
+fade_alpha = 0
+fade_speed = 2  # Alpha change per frame
+transition_state = None  # None, 'delay', 'fading_out', 'fading_in'
+transition_start_time = 0
+transition_delay = 1000  # 2 second delay between fade out and fade in
+game_over_delay = 1500  # 1.5 seconds of continued gameplay after game over
 
 # Create assets directory if it doesn't exist
 if not os.path.exists('assets'):
@@ -1417,33 +1492,231 @@ while running:
             if event.key == pygame.K_ESCAPE:
                 running = False
 
-    if not game_over:
-        # Update
-        all_sprites.update()
-        current_time = pygame.time.get_ticks()
-        elapsed_time = (current_time - game_start_time) / 1000  # Convert to seconds
+    # Update game state
+    all_sprites.update()
+    current_time = pygame.time.get_ticks()
+    elapsed_time = (current_time - game_start_time) / 1000  # Convert to seconds
 
-        # Check for boss battle timing
-        if not boss_spawned and not buffer_period and elapsed_time >= 10:
-            buffer_period = True
-            buffer_start_time = current_time
-            # Create explosions for all existing enemies
-            for enemy in enemies:
+    # Check for boss battle timing
+    if not boss_spawned and not buffer_period and elapsed_time >= 30:
+        buffer_period = True
+        buffer_start_time = current_time
+        # Create explosions for all existing enemies
+        for enemy in enemies:
+            explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
+            all_sprites.add(explosion)
+            enemy.kill()
+        enemies.empty()
+    
+    # Check buffer period (5 seconds)
+    if buffer_period and current_time - buffer_start_time >= 5000:  # 5 seconds
+        buffer_period = False
+        boss_spawned = True
+        boss = AlienBoss(WINDOW_WIDTH * 0.25)  # Spawn from center
+        all_sprites.add(boss)
+
+    # Only spawn enemies if not in buffer period and boss not spawned
+    if not buffer_period and not boss_spawned:
+        if random.random() < 0.02:  # 2% chance each frame
+            level = random.choices(
+                [1, 2, 3, 4],
+                weights=[0.4, 0.3, 0.2, 0.1]
+            )[0]
+            new_enemy = Enemy(level)
+            all_sprites.add(new_enemy)
+            enemies.add(new_enemy)
+        
+        # Add power-up spawning
+        if random.random() < 0.005:  # 0.5% chance each frame
+            powerup = PowerUp()
+            all_sprites.add(powerup)
+            powerups.add(powerup)
+
+    # Check for bullet-enemy collisions
+    hits = pygame.sprite.groupcollide(enemies, bullets, False, True)
+    for enemy, bullet_list in hits.items():
+        if enemy is not None:
+            enemy.health -= len(bullet_list)
+            if enemy.health <= 0:
+                player.add_score(enemy.points)
+                explosion_sound.play()
                 explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
                 all_sprites.add(explosion)
+                if random.random() < 0.1:  # 10% chance
+                    powerup = PowerUp(type='shield')
+                    all_sprites.add(powerup)
+                    powerups.add(powerup)
                 enemy.kill()
-            enemies.empty()
-        
-        # Check buffer period (5 seconds)
-        if buffer_period and current_time - buffer_start_time >= 5000:  # 5 seconds
-            buffer_period = False
-            boss_spawned = True
-            boss = AlienBoss(WINDOW_WIDTH * 0.25)  # Spawn from center
-            all_sprites.add(boss)
 
-        # Only spawn enemies if not in buffer period and boss not spawned
-        if not buffer_period and not boss_spawned:
-            if random.random() < 0.02:  # 2% chance each frame
+    # Check for laser-enemy collisions
+    if player.active_laser:
+        hits = pygame.sprite.spritecollide(player.active_laser, enemies, False)
+        for enemy in hits:
+            if enemy is not None:
+                enemy.health -= 1
+                if enemy.health <= 0:
+                    player.add_score(enemy.points)
+                    explosion_sound.play()
+                    enemy.kill()
+
+    # Check for boss-related collisions
+    if boss_spawned and boss.has_reached_position:
+        # Check for bullet-boss collisions
+        hits = pygame.sprite.spritecollide(boss, bullets, True)
+        for hit in hits:
+            if hit is not None:
+                boss.health -= 1
+                if boss.health <= 0:
+                    boss.kill()
+                    boss_spawned = False
+                    player.add_score(1000)
+                    game_start_time = current_time
+        
+        # Check laser hitting boss
+        if player.laser_active and player.active_laser and pygame.sprite.collide_mask(player.active_laser, boss):
+            current_time = pygame.time.get_ticks()
+            if current_time - player.active_laser.last_damage > player.active_laser.damage_delay:
+                boss.health -= player.active_laser.damage
+                player.active_laser.last_damage = current_time
+                if boss.health <= 0:
+                    boss.kill()
+                    boss_spawned = False
+                    player.add_score(1000)
+                    game_start_time = current_time
+
+        # Check for boss-player collision
+        if not game_over and not player.is_respawning and not player.is_warping:
+            if pygame.sprite.collide_mask(player, boss) and not player.shield and not player.invulnerable:
+                if player.active_laser:
+                    player.active_laser.kill()
+                    player.active_laser = None
+                explosion_sound.play()
+                explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
+                all_sprites.add(explosion)
+                player.lives -= 1
+                if player.lives <= 0:
+                    game_over = True
+                    game_over_time = pygame.time.get_ticks()
+                    if player.score > high_score:
+                        high_score = player.score
+                        save_high_score(high_score)
+                else:
+                    player.respawn()
+
+    # Check for power-up collisions
+    if not game_over:
+        hits = pygame.sprite.spritecollide(player, powerups, True, pygame.sprite.collide_mask)
+        for powerup in hits:
+            if powerup is not None:
+                player.power_up(powerup.type)
+                powerup_sound.play()
+
+    # Check for enemy bullet-player collisions
+    if not game_over and not player.is_respawning and not player.is_warping:
+        hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
+        if hits and not player.shield and not player.invulnerable:
+            hitbox_hits = [bullet for bullet in hits if player.hitbox_rect.colliderect(bullet.rect)]
+            if hitbox_hits:
+                if player.active_laser:
+                    player.active_laser.kill()
+                    player.active_laser = None
+                explosion_sound.play()
+                explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
+                all_sprites.add(explosion)
+                player.lives -= 1
+                if player.lives <= 0:
+                    game_over = True
+                    game_over_time = pygame.time.get_ticks()
+                    if player.score > high_score:
+                        high_score = player.score
+                        save_high_score(high_score)
+                else:
+                    player.respawn()
+
+    # Check for enemy-player collisions
+    if not game_over and not player.is_respawning and not player.is_warping:
+        hits = pygame.sprite.spritecollide(player, enemies, False)
+        if hits and not player.shield and not player.invulnerable:
+            hitbox_hits = [enemy for enemy in hits if player.hitbox_rect.colliderect(enemy.rect)]
+            if hitbox_hits:
+                if player.active_laser:
+                    player.active_laser.kill()
+                    player.active_laser = None
+                explosion_sound.play()
+                explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
+                all_sprites.add(explosion)
+                player.lives -= 1
+                if player.lives <= 0:
+                    game_over = True
+                    game_over_time = pygame.time.get_ticks()
+                    if player.score > high_score:
+                        high_score = player.score
+                        save_high_score(high_score)
+                else:
+                    player.respawn()
+                for enemy in hitbox_hits:
+                    explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
+                    all_sprites.add(explosion)
+                    enemy.kill()
+
+    # Draw
+    screen.blit(space_background, (0, 0))
+    
+    # Draw all sprites except player and boss
+    for sprite in all_sprites:
+        if sprite != player and not isinstance(sprite, AlienBoss):
+            if isinstance(sprite, (AsteroidExplosion, PlayerExplosion)):
+                sprite.draw(screen)
+            else:
+                screen.blit(sprite.image, sprite.rect)
+    
+    # Draw boss with health bar if spawned
+    if boss_spawned:
+        boss.draw(screen)
+    
+    # Draw player with shield if active, but only if not game over
+    if not game_over:
+        player.draw(screen)
+    
+    # Draw score and lives
+    score_text = font.render(f'Score: {player.get_score()}', True, WHITE)
+    screen.blit(score_text, (10, 10))
+    
+    lives_text = font.render(f'Lives: {player.lives}', True, WHITE)
+    screen.blit(lives_text, (10, 50))
+    
+    # Draw timer
+    timer_text = font.render(f'Time: {int(elapsed_time)}s', True, WHITE)
+    screen.blit(timer_text, (WINDOW_WIDTH - 150, 10))
+    
+    if buffer_period:
+        flash_alpha = int(255 * (0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 200)))
+        warning_font = pygame.font.Font(None, 120)
+        buffer_text = warning_font.render('BOSS INCOMING!', True, (255, 0, 0))
+        buffer_text.set_alpha(flash_alpha)
+        text_rect = buffer_text.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2))
+        screen.blit(buffer_text, text_rect)
+
+    # Handle game over screen
+    if game_over:
+        should_continue, transition_state, fade_alpha, transition_start_time = show_game_over_screen(player.get_score(), high_score, transition_state, fade_alpha, transition_start_time)
+        if not should_continue:
+            # Reset game
+            all_sprites = pygame.sprite.Group()
+            bullets = pygame.sprite.Group()
+            enemies = pygame.sprite.Group()
+            powerups = pygame.sprite.Group()
+            enemy_bullets = pygame.sprite.Group()
+            player = Player(selected_rocket)
+            all_sprites.add(player)
+            
+            # Reset boss-related variables
+            boss_spawned = False
+            buffer_period = False
+            buffer_start_time = 0
+            
+            # Spawn new enemies
+            for i in range(8):
                 level = random.choices(
                     [1, 2, 3, 4],
                     weights=[0.4, 0.3, 0.2, 0.1]
@@ -1452,221 +1725,12 @@ while running:
                 all_sprites.add(new_enemy)
                 enemies.add(new_enemy)
             
-            # Add power-up spawning
-            if random.random() < 0.05:  # 0.5% chance each frame
-                powerup = PowerUp()
-                all_sprites.add(powerup)
-                powerups.add(powerup)
+            game_over = False
+            transition_state = None
+            fade_alpha = 0
+            game_start_time = pygame.time.get_ticks()
 
-        # Check for bullet-enemy collisions
-        hits = pygame.sprite.groupcollide(enemies, bullets, False, True)  # First parameter False to keep enemies alive
-        for enemy, bullet_list in hits.items():
-            if enemy is not None:  # Check if enemy exists
-                enemy.health -= len(bullet_list)
-                if enemy.health <= 0:
-                    player.add_score(enemy.points)
-                    explosion_sound.play()
-                    # Create particle explosion
-                    explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
-                    all_sprites.add(explosion)
-                    # Chance to drop powerup
-                    if random.random() < 0.1:  # 10% chance
-                        powerup = PowerUp(type='shield')
-                        all_sprites.add(powerup)
-                        powerups.add(powerup)
-                    enemy.kill()
-
-        # Check for laser-enemy collisions
-        if player.active_laser:
-            hits = pygame.sprite.spritecollide(player.active_laser, enemies, False)
-            for enemy in hits:
-                if enemy is not None:  # Check if enemy exists
-                    enemy.health -= 1
-                    if enemy.health <= 0:
-                        player.add_score(enemy.points)
-                        explosion_sound.play()
-                        enemy.kill()
-
-        # Check for laser-boss collisions
-        if boss_spawned and boss.has_reached_position:  # Only check collisions after descent
-            # Check player bullets hitting boss
-            hits = pygame.sprite.spritecollide(boss, bullets, True)
-            for hit in hits:
-                if hit is not None:  # Check if bullet exists
-                    boss.health -= 1
-                    if boss.health <= 0:
-                        boss.kill()
-                        boss_spawned = False
-                        player.add_score(1000)  # Use player's add_score method
-                        game_start_time = current_time
-            
-            # Check player collision with boss
-            if pygame.sprite.collide_mask(player, boss):
-                player.health -= 1
-                if player.health <= 0:
-                    if player.active_laser:
-                        player.active_laser.kill()
-                        player.active_laser = None
-                    game_over = True
-                    if score > high_score:
-                        high_score = score
-                        save_high_score(high_score)
-            
-            # Check laser hitting boss
-            if player.laser_active and player.active_laser and pygame.sprite.collide_mask(player.active_laser, boss):
-                current_time = pygame.time.get_ticks()
-                if current_time - player.active_laser.last_damage > player.active_laser.damage_delay:
-                    boss.health -= player.active_laser.damage
-                    player.active_laser.last_damage = current_time
-                    if boss.health <= 0:
-                        boss.kill()
-                        boss_spawned = False
-                        player.add_score(1000)
-                        game_start_time = current_time
-
-        # Check for power-up collisions
-        hits = pygame.sprite.spritecollide(player, powerups, True, pygame.sprite.collide_mask)
-        for powerup in hits:
-            if powerup is not None:
-                player.power_up(powerup.type)
-                powerup_sound.play()
-
-        # Check for enemy bullet-player collisions
-        if not player.is_respawning and not player.is_warping:
-            hits = pygame.sprite.spritecollide(player, enemy_bullets, True)
-            if hits and not player.shield and not player.invulnerable:
-                # Stop laser sound on collision
-                if player.active_laser:
-                    player.active_laser.kill()
-                    player.active_laser = None
-                explosion_sound.play() # Play explosion sound on collision
-                # Create player explosion first
-                explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
-                all_sprites.add(explosion)
-                # Then handle player damage
-                player.lives -= 1
-                if player.lives <= 0:
-                    game_over = True
-                    if score > high_score:
-                        high_score = score
-                        save_high_score(high_score)
-                else:
-                    player.respawn()
-
-        # Check for enemy-player collisions
-        hits = pygame.sprite.spritecollide(player, enemies, False, pygame.sprite.collide_mask)
-        if hits and not player.shield and not player.invulnerable:
-            # Stop laser sound on collision
-            if player.active_laser:
-                player.active_laser.kill()
-                player.active_laser = None
-            explosion_sound.play() # Play explosion sound on collision
-            # Create player explosion first
-            explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
-            all_sprites.add(explosion)
-            # Then handle player damage
-            player.lives -= 1
-            if player.lives <= 0:
-                game_over = True
-                if score > high_score:
-                    high_score = score
-                    save_high_score(high_score)
-            else:
-                player.respawn()
-            # Destroy the enemy that hit the player
-            for enemy in hits:
-                explosion = AsteroidExplosion(enemy.rect.centerx, enemy.rect.centery, enemy.rect.width, enemy.level)
-                all_sprites.add(explosion)
-                enemy.kill()
-
-        # Check for boss-player collisions
-        if boss_spawned and boss.has_reached_position:
-            if pygame.sprite.collide_mask(player, boss) and not player.shield and not player.invulnerable:
-                # Create player explosion first
-                explosion = PlayerExplosion(player.rect.centerx, player.rect.centery)
-                all_sprites.add(explosion)
-                # Then handle player damage
-                player.lives -= 1
-                if player.lives <= 0:
-                    if player.active_laser:
-                        player.active_laser.kill()
-                        player.active_laser = None
-                    game_over = True
-                    if score > high_score:
-                        high_score = score
-                        save_high_score(high_score)
-                else:
-                    player.respawn()
-
-        # Draw
-        screen.blit(space_background, (0, 0))
-        
-        # Draw all sprites except player and boss
-        for sprite in all_sprites:
-            if sprite != player and not isinstance(sprite, AlienBoss):
-                if isinstance(sprite, AsteroidExplosion):
-                    sprite.draw(screen)  # Draw particles for AsteroidExplosion
-                else:
-                    screen.blit(sprite.image, sprite.rect)  # Draw normal sprites
-        
-        # Draw boss with health bar if spawned
-        if boss_spawned:
-            boss.draw(screen)
-        
-        # Draw player with shield if active
-        player.draw(screen)
-        
-        # Draw score and lives
-        score_text = font.render(f'Score: {player.get_score()}', True, WHITE)
-        screen.blit(score_text, (10, 10))
-        
-        lives_text = font.render(f'Lives: {player.lives}', True, WHITE)
-        screen.blit(lives_text, (10, 50))
-        
-        # Draw timer
-        timer_text = font.render(f'Time: {int(elapsed_time)}s', True, WHITE)
-        screen.blit(timer_text, (WINDOW_WIDTH - 150, 10))
-        
-        if buffer_period:
-            # Create flashing boss warning text
-            flash_alpha = int(255 * (0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 200)))  # Slower flash
-            warning_font = pygame.font.Font(None, 120)  # Much larger font
-            buffer_text = warning_font.render('BOSS INCOMING!', True, (255, 0, 0))
-            buffer_text.set_alpha(flash_alpha)
-            text_rect = buffer_text.get_rect(center=(WINDOW_WIDTH//2, WINDOW_HEIGHT//2))
-            screen.blit(buffer_text, text_rect)
-        
-        pygame.display.flip()
-
-    else:
-        show_game_over_screen(score, high_score)
-        # Reset game
-        all_sprites = pygame.sprite.Group()
-        bullets = pygame.sprite.Group()
-        enemies = pygame.sprite.Group()
-        powerups = pygame.sprite.Group()
-        enemy_bullets = pygame.sprite.Group()
-        player = Player(selected_rocket)
-        all_sprites.add(player)
-        
-        # Reset boss-related variables
-        boss_spawned = False
-        buffer_period = False
-        buffer_start_time = 0
-        
-        # Spawn new enemies
-        for i in range(8):
-            # Weighted random choice for enemy levels
-            level = random.choices(
-                [1, 2, 3, 4],
-                weights=[0.4, 0.3, 0.2, 0.1]  # 40% level 1, 30% level 2, 20% level 3, 10% level 4
-            )[0]
-            new_enemy = Enemy(level)
-            all_sprites.add(new_enemy)
-            enemies.add(new_enemy)
-        
-        score = 0
-        game_over = False
+    pygame.display.flip()
 
     # Cap the frame rate
     clock.tick(FPS)
