@@ -708,6 +708,10 @@ class Player(pygame.sprite.Sprite):
 
             # Keep player on screen
             self.rect.clamp_ip(screen.get_rect())
+            # Add top border at 10% of screen height
+            top_border = int(WINDOW_HEIGHT * 0.1)
+            if self.rect.top < top_border:
+                self.rect.top = top_border
             self.update_hitbox()  # Update hitbox after movement
 
             # Handle shooting
