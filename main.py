@@ -254,26 +254,36 @@ def show_game_over_screen(score, high_score, transition_state, fade_alpha, trans
         screen.fill(BLACK)
         font = pygame.font.Font(None, 74)
         text = font.render('GAME OVER', True, WHITE)
-        text_rect = text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/3))
+        text_rect = text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/4))
         screen.blit(text, text_rect)
         
         font = pygame.font.Font(None, 36)
         score_text = font.render(f'Score: {score}', True, WHITE)
-        score_rect = score_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2))
+        score_rect = score_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/3))
         screen.blit(score_text, score_rect)
         
         high_score_text = font.render(f'High Score: {high_score}', True, WHITE)
-        high_score_rect = high_score_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 50))
+        high_score_rect = high_score_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/3 + 50))
         screen.blit(high_score_text, high_score_rect)
         
-        restart_text = font.render('Press any button to restart', True, WHITE)
-        restart_rect = restart_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT*2/3))
-        screen.blit(restart_text, restart_rect)
+        # Draw menu options
+        menu_font = pygame.font.Font(None, 48)
+        retry_text = menu_font.render('Press R to Retry', True, WHITE)
+        menu_text = menu_font.render('Press M for Main Menu', True, WHITE)
+        quit_text = menu_font.render('Press ESC to Quit', True, GRAY)
+        
+        retry_rect = retry_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2))
+        menu_rect = menu_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 60))
+        quit_rect = quit_text.get_rect(center=(WINDOW_WIDTH/2, WINDOW_HEIGHT/2 + 120))
+        
+        screen.blit(retry_text, retry_rect)
+        screen.blit(menu_text, menu_rect)
+        screen.blit(quit_text, quit_rect)
         
         # Apply fade
         screen.blit(fade_surface, (0, 0))
         
-        # Check for restart only after fade in is complete
+        # Check for menu selection only after fade in is complete
         if fade_alpha <= 0:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -283,8 +293,10 @@ def show_game_over_screen(score, high_score, transition_state, fade_alpha, trans
                     if event.key == pygame.K_ESCAPE:
                         pygame.quit()
                         sys.exit()
-                    else:
+                    elif event.key == pygame.K_r:
                         return False, transition_state, fade_alpha, transition_start_time  # Signal to restart game
+                    elif event.key == pygame.K_m:
+                        return 'menu', transition_state, fade_alpha, transition_start_time  # Signal to go to main menu
     
     pygame.display.flip()
     return True, transition_state, fade_alpha, transition_start_time  # Keep showing game over screen
